@@ -1,0 +1,150 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  MENTOR
+  ADMIN
+}
+
+// ─── User & Auth ────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  role      Role     @default(USER)
+  sessions  Session[]
+  questions Question[]
+  profile   MentorProfile?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model MentorProfile {
+  id          String @id @default(uuid())
+  userId      String @unique
+  toneStyle   Json   @default("{}")
+  boundaries  Json   @default("{}")
+  domain      String?
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("mentor_profiles")
+}
+
+// ─── Sessions ───────────────────────────────────────────────────
+
+model Session {
+  id          String       @id @default(uuid())
+  mentorId    String
+  mentor      User         @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  title       String?
+  startedAt   DateTime     @default(now())
+  endedAt     DateTime?
+  transcripts Transcript[]
+  questions   Question[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("sessions")
+}
+
+// ─── Transcripts ────────────────────────────────────────────────
+
+model Transcript {
+  id        String   @id @default(uuid())
+  sessionId String
+  speaker   String
+  text      String
+  language  String?  @default("en")
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("transcripts")
+}
+
+// ─── Knowledge Graph (relational mirror) ────────────────────────
+
+model Concept {
+  id          String            @id @default(uuid())
+  name        String
+  description String?
+  domain      String?
+  difficulty  Int               @default(1)
+  relationsFrom ConceptRelation[] @relation("fromConcept")
+  relationsTo   ConceptRelation[] @relation("toConcept")
+  createdAt   DateTime          @default(now())
+
+  @@map("concepts")
+}
+
+model ConceptRelation {
+  id       String  @id @default(uuid())
+  fromId   String
+  toId     String
+  type     String  // PREREQUISITE_OF, RELATED_TO, HAS_EXAMPLE, etc.
+  from     Concept @relation("fromConcept", fields: [fromId], references: [id], onDelete: Cascade)
+  to       Concept @relation("toConcept", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@map("concept_relations")
+}
+
+// ─── Vector Memory ──────────────────────────────────────────────
+
+model MemoryChunk {
+  id        String   @id @default(uuid())
+  mentorId  String
+  sessionId String?
+  text      String
+  vectorId  String   // Reference to vector in FAISS/Pinecone
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([mentorId])
+  @@map("memory_chunks")
+}
+
+// ─── Q&A ────────────────────────────────────────────────────────
+
+model Question {
+  id        String   @id @default(uuid())
+  userId    String
+  sessionId String
+  text      String
+  language  String?  @default("en")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answers   Answer[]
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("questions")
+}
+
+model Answer {
+  id         String   @id @default(uuid())
+  questionId String
+  text       String
+  confidence Float?   @default(0)
+  language   String?  @default("en")
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@map("answers")
+}
