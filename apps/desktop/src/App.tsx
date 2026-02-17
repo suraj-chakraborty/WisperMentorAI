@@ -7,6 +7,7 @@ import { Dashboard } from './components/Dashboard';
 import { SessionView } from './components/SessionView';
 import { OverlayView } from './components/OverlayView';
 import { StatusBar } from './components/StatusBar';
+import { SettingsView } from './components/SettingsView';
 
 function App() {
     const [activePage, setActivePage] = useState('dashboard');
@@ -132,10 +133,7 @@ function App() {
                         />
                     )}
                     {activePage === 'settings' && (
-                        <div className="settings-placeholder">
-                            <h2>Settings</h2>
-                            <p>Configuration options will be available in future phases.</p>
-                        </div>
+                        <SettingsView />
                     )}
                 </main>
             </div>

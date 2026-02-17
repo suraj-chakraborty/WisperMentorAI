@@ -8,8 +8,6 @@ export interface AudioCaptureState {
     stopCapture: () => void;
 }
 
-
-
 interface UseAudioCaptureProps {
     onAudioChunk: (chunk: ArrayBuffer) => void;
 }
@@ -20,34 +18,25 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     const [error, setError] = useState<string | null>(null);
 
     const mediaStreamRef = useRef<MediaStream | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const animFrameRef = useRef<number>(0);
+    const processorRef = useRef<ScriptProcessorNode | null>(null);
 
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            stopCapture();
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    // context overlap (2s @ 16kHz)
+    const lastTailRef = useRef<Float32Array>(new Float32Array(0));
+    const OVERLAP_SAMPLES = 16000 * 2;
 
-    // Monitor audio levels
+    useEffect(() => () => stopCapture(), []);
+
     const monitorLevel = useCallback(() => {
         if (!analyserRef.current) return;
-
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getByteFrequencyData(dataArray);
-
-        // Calculate RMS level (0-100)
+        const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(data);
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i] * dataArray[i];
-        }
-        const rms = Math.sqrt(sum / dataArray.length);
-        const level = Math.min(100, Math.round((rms / 128) * 100));
-
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        const level = Math.min(100, Math.round(rms));
         setAudioLevel(level);
         animFrameRef.current = requestAnimationFrame(monitorLevel);
     }, []);
@@ -56,32 +45,17 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
         try {
             setError(null);
 
+            const sources = await (window as any).electronAPI.getDesktopSources();
+            const desktopSource = sources.find((s: any) => s.name === 'Entire Screen') || sources[0];
 
-            // Fetch available sources via IPC
-            const sources = (await (window as any).electronAPI.getDesktopSources()) as {
-                id: string;
-                name: string;
-            }[];
-            if (!sources || sources.length === 0) {
-                throw new Error('No desktop sources found');
-            }
-
-            // Prefer "Entire Screen" or just take the first source
-            // In a real app, we'd show a source picker modal
-            const desktopSource = sources.find((s) => s.name === 'Entire Screen') || sources[0];
-
-            // Use Electron's desktopCapturer via the special constraint
-            // This captures system audio (what comes out of speakers)
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                    // @ts-expect-error Electron-specific constraint
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: desktopSource.id,
                     },
-                },
+                } as any,
                 video: {
-                    // @ts-expect-error Electron-specific constraint
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: desktopSource.id,
@@ -89,107 +63,145 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
                         maxHeight: 1,
                         maxFrameRate: 1,
                     },
-                },
+                } as any,
             });
 
-            // We only need the audio tracks, remove video tracks
-            stream.getVideoTracks().forEach((track) => track.stop());
-
-            // Create audio-only stream
+            stream.getVideoTracks().forEach(t => t.stop());
             const audioStream = new MediaStream(stream.getAudioTracks());
             mediaStreamRef.current = audioStream;
 
-            // Set up AudioContext for level monitoring
-            const audioContext = new AudioContext();
-            audioContextRef.current = audioContext;
+            const ctx = new AudioContext();
+            audioContextRef.current = ctx;
 
-            const audioSource = audioContext.createMediaStreamSource(audioStream);
-            const analyser = audioContext.createAnalyser();
+            const source = ctx.createMediaStreamSource(audioStream);
+            const analyser = ctx.createAnalyser();
             analyser.fftSize = 256;
             analyser.smoothingTimeConstant = 0.8;
-            audioSource.connect(analyser);
+            source.connect(analyser);
             analyserRef.current = analyser;
-
-            // Start level monitoring
             animFrameRef.current = requestAnimationFrame(monitorLevel);
 
-            // Set up MediaRecorder to chunk audio
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-                ? 'audio/webm;codecs=opus'
-                : 'audio/webm';
+            const bufferSize = 4096;
+            const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
+            processorRef.current = processor;
 
-            const recorder = new MediaRecorder(audioStream, {
-                mimeType,
-                audioBitsPerSecond: 128000,
-            });
+            const sampleRate = ctx.sampleRate;
+            let audioChunks: Float32Array[] = [];
+            let totalSamples = 0;
+            let lastSpeech = Date.now();
+            let startTime = Date.now();
 
-            recorder.ondataavailable = async (event: BlobEvent) => {
-                if (event.data.size > 0) {
-                    const buffer = await event.data.arrayBuffer();
-                    onAudioChunk(buffer);
+            const SILENCE_THRESHOLD = 2;
+            const SILENCE_MS = 2000;
+            const MAX_MS = 60000;
+
+            processor.onaudioprocess = e => {
+                const input = e.inputBuffer.getChannelData(0);
+                const chunk = new Float32Array(input);
+                audioChunks.push(chunk);
+                totalSamples += chunk.length;
+
+                let sum = 0;
+                for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
+                const rms = Math.sqrt(sum / chunk.length);
+                const level = Math.min(100, Math.round(rms * 100));
+                setAudioLevel(level);
+
+                const now = Date.now();
+                if (level > SILENCE_THRESHOLD) lastSpeech = now;
+
+                if (now - startTime > MAX_MS || (now - lastSpeech > SILENCE_MS && now - startTime > 1000)) {
+                    flush();
                 }
             };
 
-            recorder.onerror = () => {
-                setError('Recording failed. Please try again.');
-                stopCapture();
+            const flush = () => {
+                if (!audioChunks.length) return;
+
+                const merged = new Float32Array(totalSamples);
+                let offset = 0;
+                for (const c of audioChunks) {
+                    merged.set(c, offset);
+                    offset += c.length;
+                }
+
+                const resampled = downsample(merged, sampleRate, 16000);
+                console.log(`[Audio] Flush: ${merged.length} samples -> ${resampled.length} samples`);
+
+                const withContext = new Float32Array(lastTailRef.current.length + resampled.length);
+                withContext.set(lastTailRef.current);
+                withContext.set(resampled, lastTailRef.current.length);
+
+                onAudioChunk(encodeWAV(withContext, 16000));
+
+                lastTailRef.current = resampled.slice(Math.max(0, resampled.length - OVERLAP_SAMPLES));
+                audioChunks = [];
+                totalSamples = 0;
+                startTime = Date.now();
+                lastSpeech = Date.now();
             };
 
-            // Chunk every 2 seconds
-            recorder.start(2000);
-            mediaRecorderRef.current = recorder;
+            source.connect(processor);
+            const mute = ctx.createGain();
+            mute.gain.value = 0;
+            processor.connect(mute);
+            mute.connect(ctx.destination);
 
             setIsCapturing(true);
-        } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Failed to capture system audio';
-
-            if (message.includes('Permission denied') || message.includes('NotAllowedError')) {
-                setError('Audio capture permission denied. Please allow screen recording access.');
-            } else if (message.includes('NotFoundError')) {
-                setError('No audio source found. Make sure audio is playing on your system.');
-            } else {
-                setError(message);
-            }
-
-            setIsCapturing(false);
+        } catch (e: any) {
+            setError(e.message || 'Audio capture failed');
         }
-    }, [onAudioChunk, monitorLevel]);
+    }, [monitorLevel, onAudioChunk]);
 
     const stopCapture = useCallback(() => {
-        // Stop MediaRecorder
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
-        }
-        mediaRecorderRef.current = null;
-
-        // Stop all tracks
-        if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        }
-        mediaStreamRef.current = null;
-
-        // Close AudioContext
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-            audioContextRef.current.close();
-        }
-        audioContextRef.current = null;
-        analyserRef.current = null;
-
-        // Stop animation frame
-        if (animFrameRef.current) {
-            cancelAnimationFrame(animFrameRef.current);
-            animFrameRef.current = 0;
-        }
-
+        processorRef.current?.disconnect();
+        mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+        audioContextRef.current?.close();
+        cancelAnimationFrame(animFrameRef.current);
         setIsCapturing(false);
         setAudioLevel(0);
     }, []);
 
-    return {
-        isCapturing,
-        audioLevel,
-        error,
-        startCapture,
-        stopCapture,
-    };
+    return { isCapturing, audioLevel, error, startCapture, stopCapture };
+}
+
+// 🔊 Utils
+function downsample(buffer: Float32Array, inRate: number, outRate: number) {
+    if (outRate === inRate) return buffer;
+    const ratio = inRate / outRate;
+    const newLen = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLen);
+    for (let i = 0; i < newLen; i++) {
+        const pos = i * ratio;
+        const idx = Math.floor(pos);
+        const frac = pos - idx;
+        result[i] = buffer[idx] * (1 - frac) + (buffer[idx + 1] || 0) * frac;
+    }
+    return result;
+}
+
+function encodeWAV(samples: Float32Array, rate: number): ArrayBuffer {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    const write = (o: number, s: string) => [...s].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+
+    write(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    write(8, 'WAVEfmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    write(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return buffer;
 }
