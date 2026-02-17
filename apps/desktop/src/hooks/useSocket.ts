@@ -25,6 +25,7 @@ interface UseSocketReturn {
     joinSession: (sessionId: string) => void;
     leaveSession: () => void;
     sendQuestion: (text: string) => void;
+    sendAudioChunk: (chunk: ArrayBuffer) => void;
     startNewSession: () => void;
 }
 
@@ -142,6 +143,18 @@ export function useSocket(): UseSocketReturn {
         joinSession(newId);
     }, [joinSession]);
 
+    const sendAudioChunk = useCallback(
+        (chunk: ArrayBuffer) => {
+            if (!sessionId) return;
+            socketRef.current?.emit('audio:chunk', {
+                sessionId,
+                chunk,
+                timestamp: Date.now(),
+            });
+        },
+        [sessionId],
+    );
+
     return {
         isConnected,
         sessionId,
@@ -151,6 +164,7 @@ export function useSocket(): UseSocketReturn {
         joinSession,
         leaveSession,
         sendQuestion,
+        sendAudioChunk,
         startNewSession,
     };
 }

@@ -70,12 +70,12 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 |:---:|---|---|
 | 0 | Repo & Multi-project Scaffold | **Complete** |
 | 1 | Electron Desktop App & Overlay | **Complete** |
-| 2 | System Audio Capture (WebRTC) | Up Next |
-| 3 | Real-Time ASR Integration | Planned |
+| 2 | System Audio Capture (WebRTC) | **Complete** |
+| 3 | Real-Time ASR Integration | Up Next |
 | 4 | Semantic Knowledge Base (Neo4j + Vector) | Planned |
 | 5 | AI Reasoning Engine & Private Q&A | Planned |
 
-### Phase 1 Highlights
+### progress till now
 - **Custom frameless window** with branded TitleBar (drag, minimize, maximize, close)
 - **System tray** integration — minimize-to-tray, context menu (Show / Toggle Overlay / Quit)
 - **Overlay mode** — `Ctrl+Shift+M` toggles a compact always-on-top floating panel
@@ -85,33 +85,14 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 - **Overlay view** — Minimal floating UI with recent transcripts and quick question input
 - **StatusBar** — Connection state, session timer, overlay toggle
 - **WebSocket client** — `useSocket` hook with auto-reconnect, session management, and real-time Q&A via socket.io-client
+- **Error Handling** — Integrated error reporting for connection and capture issues
+- **System Audio Capture** — Securely captures desktop audio using Electron's `desktopCapturer` and `getUserMedia` constraints.
+- **Visual Feedback** — "Start Rec" button with pulsing red indicator and real-time audio level meter.
+- **Streaming Pipeline** — Audio is chunked (Opus/WebM) and streamed to the backend via WebSocket.
+- **Immediate Response** — Backend echoes simulated transcripts for instant feedback (placeholder for Whisper integration).
 
 ---
 
-## Setup & Local Development
-
-### Prerequisites
-- Node.js (v20+)
-- Docker & Docker Compose
-- npm (v10+)
-
-### Run the Desktop App
-```bash
-# Install all dependencies from root
-npm install
-
-# Start the Electron app
-cd apps/desktop && npm run electron:dev
-```
-
-### Run the Backend (for WebSocket)
-```bash
-# Start infrastructure services
-docker compose up -d
-
-# Start the NestJS server
-cd apps/backend && npm run start:dev
-```
 
 ### Keyboard Shortcuts
 | Shortcut | Action |

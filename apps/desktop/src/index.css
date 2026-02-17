@@ -1182,3 +1182,76 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* ─── Audio Recording UI ───────────────────────────────────── */
+
+.session__rec-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.session__rec-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+}
+
+.session__rec-btn--active {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: rgba(255, 107, 107, 0.3);
+  color: var(--color-error);
+}
+
+.session__rec-btn--active .session__rec-dot {
+  background: var(--color-error);
+  box-shadow: 0 0 8px var(--color-error);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.session__rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  transition: all var(--transition-base);
+}
+
+.session__level-meter {
+  width: 80px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.session__level-bar {
+  height: 100%;
+  background: var(--color-success);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 8px var(--color-success);
+}
+
+.transcript-feed__error {
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  animation: fadeIn 0.3s ease;
+}
