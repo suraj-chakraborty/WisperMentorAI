@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer } from 'electron';
 import * as path from 'path';
 
 let mainWindow: BrowserWindow | null = null;
@@ -150,6 +150,15 @@ function registerIpcHandlers(): void {
     });
 
     ipcMain.handle('overlay:status', () => isOverlayMode);
+
+    // Audio capture
+    ipcMain.handle('audio:get-sources', async () => {
+        const sources = await desktopCapturer.getSources({
+            types: ['screen', 'window'],
+            thumbnailSize: { width: 0, height: 0 },
+        });
+        return sources.map((s) => ({ id: s.id, name: s.name }));
+    });
 }
 
 // ─── App Lifecycle ──────────────────────────────────────────────

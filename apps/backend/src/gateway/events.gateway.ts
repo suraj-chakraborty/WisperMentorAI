@@ -61,8 +61,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         @ConnectedSocket() client: Socket,
         @MessageBody() data: { sessionId: string; chunk: ArrayBuffer },
     ) {
-        this.logger.debug(`🎙 Audio chunk from ${client.id} for session ${data.sessionId}`);
-        // Phase 2+: Forward to transcription service
+        const size = data.chunk.byteLength;
+        // this.logger.debug(`🎙 Audio chunk: ${size} bytes for session ${data.sessionId}`);
+
+        // Echo a fake transcript update periodically to show activity
+        // Always emit for demo purposes
+        if (true) {
+            const phrases = [
+                "Interesting point about the architecture...",
+                "So we need to scale the database horizontal...",
+                "The user authentication flow is critical here.",
+                "Let's deploy this to the staging environment.",
+                "Can you explain the use effect hook again?",
+            ];
+            const text = phrases[Math.floor(Math.random() * phrases.length)];
+
+            client.emit('transcript:update', {
+                id: `t_${Date.now()}`,
+                speaker: 'Mentor',
+                text,
+            });
+        }
     }
 
     @SubscribeMessage('question:ask')

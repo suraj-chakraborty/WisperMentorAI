@@ -13,7 +13,8 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   onOverlayToggled: (callback) => {
     electron.ipcRenderer.on("overlay:toggled", (_event, isOverlay) => callback(isOverlay));
   },
-  // Audio capture (Phase 2)
+  // Audio capture
+  getDesktopSources: () => electron.ipcRenderer.invoke("audio:get-sources"),
   startAudioCapture: () => electron.ipcRenderer.invoke("audio:start"),
   stopAudioCapture: () => electron.ipcRenderer.invoke("audio:stop"),
   // Generic IPC listeners
