@@ -10,6 +10,7 @@ import { MemoryModule } from './modules/memory/memory.module';
 import { AiModule } from './modules/ai/ai.module';
 import { HttpModule } from '@nestjs/axios';
 import { TranscriptionService } from './transcription/transcription.service';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
     imports: [
@@ -19,9 +20,9 @@ import { TranscriptionService } from './transcription/transcription.service';
         SessionModule,
         TranscriptModule,
         MemoryModule,
-        MemoryModule,
         AiModule,
         HttpModule,
+        SettingsModule,
     ],
     controllers: [AppController],
     providers: [

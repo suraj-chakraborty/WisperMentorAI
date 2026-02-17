@@ -25,6 +25,7 @@ model User {
   email     String   @unique
   name      String?
   role      Role     @default(USER)
+  settings  Json     @default("{}")
   sessions  Session[]
   questions Question[]
   profile   MentorProfile?
