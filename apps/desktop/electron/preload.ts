@@ -16,7 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('overlay:toggled', (_event, isOverlay) => callback(isOverlay));
     },
 
-    // Audio capture (Phase 2)
+    // Audio capture
+    getDesktopSources: () => ipcRenderer.invoke('audio:get-sources'),
     startAudioCapture: () => ipcRenderer.invoke('audio:start'),
     stopAudioCapture: () => ipcRenderer.invoke('audio:stop'),
 

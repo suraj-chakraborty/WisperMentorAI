@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
+import ReactMarkdown from 'react-markdown';
 
 interface SessionViewProps {
     sessionId: string | null;
@@ -9,6 +10,10 @@ interface SessionViewProps {
     onLeaveSession: () => void;
     onStartSession: () => void;
     isConnected: boolean;
+    isCapturing: boolean;
+    audioLevel: number;
+    error: string | null;
+    onToggleCapture: () => void;
 }
 
 export function SessionView({
@@ -19,6 +24,10 @@ export function SessionView({
     onLeaveSession,
     onStartSession,
     isConnected,
+    isCapturing,
+    audioLevel,
+    error,
+    onToggleCapture,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -83,10 +92,22 @@ export function SessionView({
             {/* Session Header */}
             <div className="session__header">
                 <div className="session__info">
-                    <div className="session__recording">
+                    <button
+                        className={`session__rec-btn ${isCapturing ? 'session__rec-btn--active' : ''}`}
+                        onClick={onToggleCapture}
+                        title={isCapturing ? 'Stop Recording' : 'Start Recording'}
+                    >
                         <span className="session__rec-dot" />
-                        <span>Recording</span>
-                    </div>
+                        {isCapturing ? 'Recording' : 'Start Rec'}
+                    </button>
+                    {isCapturing && (
+                        <div className="session__level-meter">
+                            <div
+                                className="session__level-bar"
+                                style={{ width: `${audioLevel}%` }}
+                            />
+                        </div>
+                    )}
                     <span className="session__timer">{formatTime(elapsed)}</span>
                 </div>
                 <div className="session__tabs">
@@ -112,11 +133,20 @@ export function SessionView({
             <div className="session__content">
                 {activeTab === 'transcript' ? (
                     <div className="transcript-feed">
+                        {error && (
+                            <div className="transcript-feed__error">
+                                ⚠️ {error}
+                            </div>
+                        )}
                         {transcripts.length === 0 ? (
                             <div className="transcript-feed__empty">
-                                <p>Listening for audio…</p>
+                                <p>
+                                    {isCapturing
+                                        ? 'Listening for speech...'
+                                        : 'Click "Start Rec" to begin capturing audio.'}
+                                </p>
                                 <p className="transcript-feed__hint">
-                                    Transcripts will appear here when audio capture is active (Phase 2).
+                                    System audio will be transcribed here in real-time.
                                 </p>
                             </div>
                         ) : (
@@ -153,7 +183,9 @@ export function SessionView({
                                     {a.text && (
                                         <div className="qa-msg__answer">
                                             <span className="qa-msg__label">AI Mentor</span>
-                                            <p>{a.text}</p>
+                                            <div className="markdown-body">
+                                                <ReactMarkdown>{a.text}</ReactMarkdown>
+                                            </div>
                                         </div>
                                     )}
                                     {!a.text && (

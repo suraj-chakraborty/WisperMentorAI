@@ -138,6 +138,13 @@ function registerIpcHandlers() {
     return isOverlayMode;
   });
   electron.ipcMain.handle("overlay:status", () => isOverlayMode);
+  electron.ipcMain.handle("audio:get-sources", async () => {
+    const sources = await electron.desktopCapturer.getSources({
+      types: ["screen", "window"],
+      thumbnailSize: { width: 0, height: 0 }
+    });
+    return sources.map((s) => ({ id: s.id, name: s.name }));
+  });
 }
 electron.app.whenReady().then(() => {
   registerIpcHandlers();

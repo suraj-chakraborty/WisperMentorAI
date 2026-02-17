@@ -70,12 +70,12 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 |:---:|---|---|
 | 0 | Repo & Multi-project Scaffold | **Complete** |
 | 1 | Electron Desktop App & Overlay | **Complete** |
-| 2 | System Audio Capture (WebRTC) | Up Next |
-| 3 | Real-Time ASR Integration | Planned |
+| 2 | System Audio Capture (WebRTC) | **Complete** |
+| 3 | Real-Time ASR Integration | **Complete** |
 | 4 | Semantic Knowledge Base (Neo4j + Vector) | Planned |
 | 5 | AI Reasoning Engine & Private Q&A | Planned |
 
-### Phase 1 Highlights
+### progress till now
 - **Custom frameless window** with branded TitleBar (drag, minimize, maximize, close)
 - **System tray** integration — minimize-to-tray, context menu (Show / Toggle Overlay / Quit)
 - **Overlay mode** — `Ctrl+Shift+M` toggles a compact always-on-top floating panel
@@ -85,15 +85,22 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 - **Overlay view** — Minimal floating UI with recent transcripts and quick question input
 - **StatusBar** — Connection state, session timer, overlay toggle
 - **WebSocket client** — `useSocket` hook with auto-reconnect, session management, and real-time Q&A via socket.io-client
+- **Error Handling** — Integrated error reporting for connection and capture issues
+- **System Audio Capture** — Securely captures desktop audio using Electron's `desktopCapturer` and `getUserMedia` constraints.
+- **Visual Feedback** — "Start Rec" button with pulsing red indicator and real-time audio level meter.
+- **Streaming Pipeline** — Audio is chunked (Opus/WebM) and streamed to the backend via WebSocket.
+- **Real-Time ASR** — Integrated **Faster-Whisper** for offline, local, and private speech-to-text.
+- **AI Microservice** — Dedicated Python FastAPI service for high-performance inference (`127.0.0.1:8000`).
+- **Robust Audio Pipeline** — Audio is captured as **WAV chunks**, ensuring compatibility and stability.
+- **Live Transcription** — Real-time text updates in the Overlay and Session View.
 
 ---
 
-## Setup & Local Development
 
-### Prerequisites
-- Node.js (v20+)
-- Docker & Docker Compose
-- npm (v10+)
+### Keyboard Shortcuts
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+M` | Toggle overlay mode |
 
 ### Run the Desktop App
 ```bash

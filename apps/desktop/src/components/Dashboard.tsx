@@ -4,11 +4,12 @@ interface DashboardProps {
     isConnected: boolean;
     sessionStatus: string;
     sessionId: string | null;
+    isCapturing: boolean;
     onStartSession: () => void;
     onNavigate: (page: string) => void;
 }
 
-export function Dashboard({ isConnected, sessionStatus, sessionId, onStartSession, onNavigate }: DashboardProps) {
+export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onNavigate }: DashboardProps) {
     return (
         <div className="dashboard">
             {/* Welcome Card */}
@@ -72,19 +73,19 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, onStartSessio
                         <span className="connection-value">{sessionStatus}</span>
                     </div>
                     <div className="connection-item">
-                        <span className="connection-dot connection-dot--off" />
+                        <span className={`connection-dot ${isCapturing ? 'connection-dot--on' : 'connection-dot--off'}`} />
                         <span className="connection-label">Audio Capture</span>
-                        <span className="connection-value">Phase 2</span>
+                        <span className="connection-value">{isCapturing ? 'Active' : 'Idle'}</span>
                     </div>
                     <div className="connection-item">
-                        <span className="connection-dot connection-dot--off" />
+                        <span className="connection-dot connection-dot--on" />
                         <span className="connection-label">Transcription</span>
-                        <span className="connection-value">Phase 3</span>
+                        <span className="connection-value">Online</span>
                     </div>
                     <div className="connection-item">
-                        <span className="connection-dot connection-dot--off" />
+                        <span className="connection-dot connection-dot--on" />
                         <span className="connection-label">Knowledge Graph</span>
-                        <span className="connection-value">Phase 4</span>
+                        <span className="connection-value">Online</span>
                     </div>
                 </div>
             </div>

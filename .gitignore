@@ -30,6 +30,8 @@ release/
 # Prisma
 apps/backend/prisma/*.db
 apps/backend/prisma/migrations/
+apps/ai-service/Scripts*
+apps/ai-service/.venv/
 
 # Docker
 docker-data/

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './hooks/useSocket';
+import { useAudioCapture } from './hooks/useAudioCapture';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { SessionView } from './components/SessionView';
 import { OverlayView } from './components/OverlayView';
 import { StatusBar } from './components/StatusBar';
+import { SettingsView } from './components/SettingsView';
 
 function App() {
     const [activePage, setActivePage] = useState('dashboard');
@@ -21,8 +23,19 @@ function App() {
         joinSession,
         leaveSession,
         sendQuestion,
+        sendAudioChunk,
         startNewSession,
     } = useSocket();
+
+    const {
+        isCapturing,
+        audioLevel,
+        startCapture,
+        stopCapture,
+        error: audioError,
+    } = useAudioCapture({
+        onAudioChunk: (chunk) => sendAudioChunk(chunk),
+    });
 
     // Listen for overlay toggle from Electron main process
     useEffect(() => {
@@ -50,6 +63,16 @@ function App() {
             setIsOverlay(result);
         }
     }, []);
+
+    const handleToggleCapture = useCallback(() => {
+        if (isCapturing) {
+            stopCapture();
+        } else {
+            startCapture().catch((err: unknown) => {
+                console.error('Failed to start capture:', err);
+            });
+        }
+    }, [isCapturing, startCapture, stopCapture]);
 
     const handleNavigate = useCallback((page: string) => {
         setActivePage(page);
@@ -89,6 +112,7 @@ function App() {
                             isConnected={isConnected}
                             sessionStatus={sessionStatus}
                             sessionId={sessionId}
+                            isCapturing={isCapturing}
                             onStartSession={startNewSession}
                             onNavigate={handleNavigate}
                         />
@@ -102,13 +126,14 @@ function App() {
                             onLeaveSession={leaveSession}
                             onStartSession={startNewSession}
                             isConnected={isConnected}
+                            isCapturing={isCapturing}
+                            audioLevel={audioLevel}
+                            error={audioError}
+                            onToggleCapture={handleToggleCapture}
                         />
                     )}
                     {activePage === 'settings' && (
-                        <div className="settings-placeholder">
-                            <h2>Settings</h2>
-                            <p>Configuration options will be available in future phases.</p>
-                        </div>
+                        <SettingsView />
                     )}
                 </main>
             </div>
