@@ -7,10 +7,16 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   minimizeWindow: () => electron.ipcRenderer.send("window:minimize"),
   maximizeWindow: () => electron.ipcRenderer.send("window:maximize"),
   closeWindow: () => electron.ipcRenderer.send("window:close"),
+  // Overlay
+  toggleOverlay: () => electron.ipcRenderer.invoke("overlay:toggle"),
+  getOverlayStatus: () => electron.ipcRenderer.invoke("overlay:status"),
+  onOverlayToggled: (callback) => {
+    electron.ipcRenderer.on("overlay:toggled", (_event, isOverlay) => callback(isOverlay));
+  },
   // Audio capture (Phase 2)
   startAudioCapture: () => electron.ipcRenderer.invoke("audio:start"),
   stopAudioCapture: () => electron.ipcRenderer.invoke("audio:stop"),
-  // IPC listeners
+  // Generic IPC listeners
   onMessage: (channel, callback) => {
     electron.ipcRenderer.on(channel, (_event, ...args) => callback(...args));
   },

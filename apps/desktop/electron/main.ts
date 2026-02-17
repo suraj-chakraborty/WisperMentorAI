@@ -1,14 +1,18 @@
-import { app, BrowserWindow, globalShortcut } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import * as path from 'path';
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isOverlayMode = false;
+let isQuitting = false;
 
-const isDev = process.env.NODE_ENV !== 'production';
+const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const DIST = process.env.DIST || path.join(__dirname, '../dist');
+const VITE_PUBLIC = process.env.VITE_PUBLIC || path.join(__dirname, '../public');
+
+// ─── Window Creation ────────────────────────────────────────────
 
 function createMainWindow(): void {
-    const VITE_PUBLIC = process.env.VITE_PUBLIC || path.join(__dirname, '../public');
-    const DIST = process.env.DIST || path.join(__dirname, '../dist');
-
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
@@ -16,6 +20,8 @@ function createMainWindow(): void {
         minHeight: 600,
         title: 'WhisperMentor AI',
         icon: path.join(VITE_PUBLIC, 'logo-short.png'),
+        frame: false, // Custom titlebar
+        titleBarStyle: 'hidden',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -25,9 +31,8 @@ function createMainWindow(): void {
         show: false,
     });
 
-    // Load app
-    if (process.env.VITE_DEV_SERVER_URL) {
-        mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    if (VITE_DEV_SERVER_URL) {
+        mainWindow.loadURL(VITE_DEV_SERVER_URL);
         mainWindow.webContents.openDevTools();
     } else {
         mainWindow.loadFile(path.join(DIST, 'index.html'));
@@ -40,22 +45,128 @@ function createMainWindow(): void {
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+
+    // Minimize to tray instead of closing
+    mainWindow.on('close', (e) => {
+        if (!isQuitting) {
+            e.preventDefault();
+            mainWindow?.hide();
+        }
+    });
+}
+
+// ─── Overlay Toggle ─────────────────────────────────────────────
+
+function toggleOverlay(): void {
+    if (!mainWindow) return;
+
+    isOverlayMode = !isOverlayMode;
+
+    if (isOverlayMode) {
+        // Switch to overlay mode
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
+        mainWindow.setVisibleOnAllWorkspaces(true);
+        mainWindow.setSize(420, 600);
+        mainWindow.setMinimumSize(320, 400);
+        mainWindow.setPosition(
+            Math.floor(mainWindow.getBounds().x),
+            Math.floor(mainWindow.getBounds().y),
+        );
+        mainWindow.setOpacity(0.95);
+        mainWindow.setSkipTaskbar(true);
+    } else {
+        // Switch back to normal mode
+        mainWindow.setAlwaysOnTop(false);
+        mainWindow.setVisibleOnAllWorkspaces(false);
+        mainWindow.setSize(1200, 800);
+        mainWindow.setMinimumSize(800, 600);
+        mainWindow.setOpacity(1);
+        mainWindow.setSkipTaskbar(false);
+    }
+
+    // Notify renderer of mode change
+    mainWindow.webContents.send('overlay:toggled', isOverlayMode);
+}
+
+// ─── System Tray ────────────────────────────────────────────────
+
+function createTray(): void {
+    const iconPath = path.join(VITE_PUBLIC, 'logo-short.png');
+    const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    tray = new Tray(icon);
+
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Show WhisperMentor',
+            click: () => {
+                mainWindow?.show();
+                mainWindow?.focus();
+            },
+        },
+        {
+            label: 'Toggle Overlay',
+            click: () => toggleOverlay(),
+        },
+        { type: 'separator' },
+        {
+            label: 'Quit',
+            click: () => {
+                isQuitting = true;
+                app.quit();
+            },
+        },
+    ]);
+
+    tray.setToolTip('WhisperMentor AI');
+    tray.setContextMenu(contextMenu);
+
+    tray.on('click', () => {
+        if (mainWindow?.isVisible()) {
+            mainWindow.focus();
+        } else {
+            mainWindow?.show();
+        }
+    });
+}
+
+// ─── IPC Handlers ───────────────────────────────────────────────
+
+function registerIpcHandlers(): void {
+    ipcMain.handle('app:version', () => app.getVersion());
+
+    ipcMain.on('window:minimize', () => mainWindow?.minimize());
+    ipcMain.on('window:maximize', () => {
+        if (mainWindow?.isMaximized()) {
+            mainWindow.unmaximize();
+        } else {
+            mainWindow?.maximize();
+        }
+    });
+    ipcMain.on('window:close', () => mainWindow?.close());
+
+    ipcMain.handle('overlay:toggle', () => {
+        toggleOverlay();
+        return isOverlayMode;
+    });
+
+    ipcMain.handle('overlay:status', () => isOverlayMode);
 }
 
 // ─── App Lifecycle ──────────────────────────────────────────────
 
 app.whenReady().then(() => {
+    registerIpcHandlers();
     createMainWindow();
+    createTray();
 
-    // Global hotkey: Ctrl+Shift+M to toggle overlay (Phase 1)
+    // Global hotkey: Ctrl+Shift+M to toggle overlay
     globalShortcut.register('CommandOrControl+Shift+M', () => {
         if (mainWindow) {
-            if (mainWindow.isVisible()) {
-                mainWindow.hide();
-            } else {
+            if (!mainWindow.isVisible()) {
                 mainWindow.show();
                 mainWindow.focus();
             }
+            toggleOverlay();
         }
     });
 
@@ -68,6 +179,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+        isQuitting = true;
         app.quit();
     }
 });
