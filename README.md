@@ -71,7 +71,7 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 | 0 | Repo & Multi-project Scaffold | **Complete** |
 | 1 | Electron Desktop App & Overlay | **Complete** |
 | 2 | System Audio Capture (WebRTC) | **Complete** |
-| 3 | Real-Time ASR Integration | Up Next |
+| 3 | Real-Time ASR Integration | **Complete** |
 | 4 | Semantic Knowledge Base (Neo4j + Vector) | Planned |
 | 5 | AI Reasoning Engine & Private Q&A | Planned |
 
@@ -89,7 +89,10 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 - **System Audio Capture** — Securely captures desktop audio using Electron's `desktopCapturer` and `getUserMedia` constraints.
 - **Visual Feedback** — "Start Rec" button with pulsing red indicator and real-time audio level meter.
 - **Streaming Pipeline** — Audio is chunked (Opus/WebM) and streamed to the backend via WebSocket.
-- **Immediate Response** — Backend echoes simulated transcripts for instant feedback (placeholder for Whisper integration).
+- **Real-Time ASR** — Integrated **Faster-Whisper** for offline, local, and private speech-to-text.
+- **AI Microservice** — Dedicated Python FastAPI service for high-performance inference (`127.0.0.1:8000`).
+- **Robust Audio Pipeline** — Audio is captured as **WAV chunks**, ensuring compatibility and stability.
+- **Live Transcription** — Real-time text updates in the Overlay and Session View.
 
 ---
 
