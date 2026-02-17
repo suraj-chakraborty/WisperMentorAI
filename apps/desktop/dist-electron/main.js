@@ -19,10 +19,13 @@ function _interopNamespaceDefault(e) {
 }
 const path__namespace = /* @__PURE__ */ _interopNamespaceDefault(path);
 let mainWindow = null;
-process.env.NODE_ENV !== "production";
+let tray = null;
+let isOverlayMode = false;
+let isQuitting = false;
+const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const DIST = process.env.DIST || path__namespace.join(__dirname, "../dist");
+const VITE_PUBLIC = process.env.VITE_PUBLIC || path__namespace.join(__dirname, "../public");
 function createMainWindow() {
-  const VITE_PUBLIC = process.env.VITE_PUBLIC || path__namespace.join(__dirname, "../public");
-  const DIST = process.env.DIST || path__namespace.join(__dirname, "../dist");
   mainWindow = new electron.BrowserWindow({
     width: 1200,
     height: 800,
@@ -30,6 +33,9 @@ function createMainWindow() {
     minHeight: 600,
     title: "WhisperMentor AI",
     icon: path__namespace.join(VITE_PUBLIC, "logo-short.png"),
+    frame: false,
+    // Custom titlebar
+    titleBarStyle: "hidden",
     webPreferences: {
       preload: path__namespace.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -38,8 +44,8 @@ function createMainWindow() {
     backgroundColor: "#0a0a0f",
     show: false
   });
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  if (VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path__namespace.join(DIST, "index.html"));
@@ -50,17 +56,100 @@ function createMainWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  mainWindow.on("close", (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow == null ? void 0 : mainWindow.hide();
+    }
+  });
+}
+function toggleOverlay() {
+  if (!mainWindow) return;
+  isOverlayMode = !isOverlayMode;
+  if (isOverlayMode) {
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+    mainWindow.setVisibleOnAllWorkspaces(true);
+    mainWindow.setSize(420, 600);
+    mainWindow.setMinimumSize(320, 400);
+    mainWindow.setPosition(
+      Math.floor(mainWindow.getBounds().x),
+      Math.floor(mainWindow.getBounds().y)
+    );
+    mainWindow.setOpacity(0.95);
+    mainWindow.setSkipTaskbar(true);
+  } else {
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setVisibleOnAllWorkspaces(false);
+    mainWindow.setSize(1200, 800);
+    mainWindow.setMinimumSize(800, 600);
+    mainWindow.setOpacity(1);
+    mainWindow.setSkipTaskbar(false);
+  }
+  mainWindow.webContents.send("overlay:toggled", isOverlayMode);
+}
+function createTray() {
+  const iconPath = path__namespace.join(VITE_PUBLIC, "logo-short.png");
+  const icon = electron.nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  tray = new electron.Tray(icon);
+  const contextMenu = electron.Menu.buildFromTemplate([
+    {
+      label: "Show WhisperMentor",
+      click: () => {
+        mainWindow == null ? void 0 : mainWindow.show();
+        mainWindow == null ? void 0 : mainWindow.focus();
+      }
+    },
+    {
+      label: "Toggle Overlay",
+      click: () => toggleOverlay()
+    },
+    { type: "separator" },
+    {
+      label: "Quit",
+      click: () => {
+        isQuitting = true;
+        electron.app.quit();
+      }
+    }
+  ]);
+  tray.setToolTip("WhisperMentor AI");
+  tray.setContextMenu(contextMenu);
+  tray.on("click", () => {
+    if (mainWindow == null ? void 0 : mainWindow.isVisible()) {
+      mainWindow.focus();
+    } else {
+      mainWindow == null ? void 0 : mainWindow.show();
+    }
+  });
+}
+function registerIpcHandlers() {
+  electron.ipcMain.handle("app:version", () => electron.app.getVersion());
+  electron.ipcMain.on("window:minimize", () => mainWindow == null ? void 0 : mainWindow.minimize());
+  electron.ipcMain.on("window:maximize", () => {
+    if (mainWindow == null ? void 0 : mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow == null ? void 0 : mainWindow.maximize();
+    }
+  });
+  electron.ipcMain.on("window:close", () => mainWindow == null ? void 0 : mainWindow.close());
+  electron.ipcMain.handle("overlay:toggle", () => {
+    toggleOverlay();
+    return isOverlayMode;
+  });
+  electron.ipcMain.handle("overlay:status", () => isOverlayMode);
 }
 electron.app.whenReady().then(() => {
+  registerIpcHandlers();
   createMainWindow();
+  createTray();
   electron.globalShortcut.register("CommandOrControl+Shift+M", () => {
     if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
+      if (!mainWindow.isVisible()) {
         mainWindow.show();
         mainWindow.focus();
       }
+      toggleOverlay();
     }
   });
   electron.app.on("activate", () => {
@@ -71,6 +160,7 @@ electron.app.whenReady().then(() => {
 });
 electron.app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    isQuitting = true;
     electron.app.quit();
   }
 });

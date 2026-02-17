@@ -64,15 +64,27 @@ whispermentor-ai/
 - **Sign Language:** MediaPipe, TensorFlow, Three.js (for avatars)
 
 ## Development Status
-We have successfully completed **Phase 0: Infrastructure**.
+We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop App**.
 
 | Phase | Milestone | Status |
 |:---:|---|---|
 | 0 | Repo & Multi-project Scaffold | **Complete** |
-| 1 | Electron Main Window & Transparent Overlay | Up Next |
-| 2 | System Audio Capture (WebRTC) | Planned |
+| 1 | Electron Desktop App & Overlay | **Complete** |
+| 2 | System Audio Capture (WebRTC) | Up Next |
 | 3 | Real-Time ASR Integration | Planned |
 | 4 | Semantic Knowledge Base (Neo4j + Vector) | Planned |
+| 5 | AI Reasoning Engine & Private Q&A | Planned |
+
+### Phase 1 Highlights
+- **Custom frameless window** with branded TitleBar (drag, minimize, maximize, close)
+- **System tray** integration — minimize-to-tray, context menu (Show / Toggle Overlay / Quit)
+- **Overlay mode** — `Ctrl+Shift+M` toggles a compact always-on-top floating panel
+- **Sidebar navigation** — Dashboard, Session, and Settings with live connection status
+- **Dashboard** — Welcome card, stats grid, system status panel, quick session actions
+- **Session view** — Live transcript feed + private Q&A chat with typing indicators
+- **Overlay view** — Minimal floating UI with recent transcripts and quick question input
+- **StatusBar** — Connection state, session timer, overlay toggle
+- **WebSocket client** — `useSocket` hook with auto-reconnect, session management, and real-time Q&A via socket.io-client
 
 ---
 
@@ -82,6 +94,29 @@ We have successfully completed **Phase 0: Infrastructure**.
 - Node.js (v20+)
 - Docker & Docker Compose
 - npm (v10+)
+
+### Run the Desktop App
+```bash
+# Install all dependencies from root
+npm install
+
+# Start the Electron app
+cd apps/desktop && npm run electron:dev
+```
+
+### Run the Backend (for WebSocket)
+```bash
+# Start infrastructure services
+docker compose up -d
+
+# Start the NestJS server
+cd apps/backend && npm run start:dev
+```
+
+### Keyboard Shortcuts
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+M` | Toggle overlay mode |
 
 ## License
 Distributed under the MIT License.

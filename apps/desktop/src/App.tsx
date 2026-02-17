@@ -1,82 +1,125 @@
-import React from 'react';
-
-const features = [
-    {
-        icon: '🎙',
-        title: 'Real-Time Listening',
-        desc: 'Captures system audio from any video call — Zoom, Meet, Teams — and transcribes live.',
-    },
-    {
-        icon: '🧠',
-        title: 'Mentor Brain',
-        desc: 'Builds semantic memory using embeddings. Learns tone, style, and explanation depth.',
-    },
-    {
-        icon: '❓',
-        title: 'Private Q&A',
-        desc: 'Ask questions privately via text or voice. AI answers silently in mentor\'s style.',
-    },
-    {
-        icon: '🌍',
-        title: 'Multilingual',
-        desc: 'Auto language detection. Translates to/from user language with voice + text output.',
-    },
-    {
-        icon: '🤟',
-        title: 'Sign Language',
-        desc: 'MediaPipe gesture recognition → AI reasoning → Sign avatar response.',
-    },
-    {
-        icon: '🔒',
-        title: 'Private & Ethical',
-        desc: 'Mentor-controlled permissions. Topic boundaries, redaction, and local-first processing.',
-    },
-];
-
-
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSocket } from './hooks/useSocket';
+import { TitleBar } from './components/TitleBar';
+import { Sidebar } from './components/Sidebar';
+import { Dashboard } from './components/Dashboard';
+import { SessionView } from './components/SessionView';
+import { OverlayView } from './components/OverlayView';
+import { StatusBar } from './components/StatusBar';
 
 function App() {
+    const [activePage, setActivePage] = useState('dashboard');
+    const [isOverlay, setIsOverlay] = useState(false);
+    const [elapsed, setElapsed] = useState(0);
+
+    const {
+        isConnected,
+        sessionId,
+        sessionStatus,
+        transcripts,
+        answers,
+        joinSession,
+        leaveSession,
+        sendQuestion,
+        startNewSession,
+    } = useSocket();
+
+    // Listen for overlay toggle from Electron main process
+    useEffect(() => {
+        window.electronAPI?.onOverlayToggled((overlayState: boolean) => {
+            setIsOverlay(overlayState);
+        });
+    }, []);
+
+    // Session timer
+    useEffect(() => {
+        if (!sessionId) {
+            setElapsed(0);
+            return;
+        }
+        const start = Date.now();
+        const interval = setInterval(() => {
+            setElapsed(Math.floor((Date.now() - start) / 1000));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [sessionId]);
+
+    const handleToggleOverlay = useCallback(async () => {
+        const result = await window.electronAPI?.toggleOverlay();
+        if (typeof result === 'boolean') {
+            setIsOverlay(result);
+        }
+    }, []);
+
+    const handleNavigate = useCallback((page: string) => {
+        setActivePage(page);
+    }, []);
+
+    // ── Overlay Mode Render ──
+    if (isOverlay) {
+        return (
+            <div className="app app--overlay">
+                <OverlayView
+                    transcripts={transcripts}
+                    answers={answers}
+                    onSendQuestion={sendQuestion}
+                    onToggleOverlay={handleToggleOverlay}
+                />
+            </div>
+        );
+    }
+
+    // ── Normal Mode Render ──
     return (
         <div className="app">
-            {/* Header */}
-            <header className="header">
-                <div className="header__brand">
-                    <img src="/logo-short.png" alt="WM" className="header__logo" />
-                    <span className="header__title">WhisperMentor AI</span>
-                    <span className="header__version">v0.1.0</span>
-                </div>
-            </header>
+            <TitleBar isOverlay={isOverlay} />
 
-            {/* Hero */}
-            <section className="hero">
-                <img src="/logo.png" alt="WhisperMentor AI" className="hero__icon" />
-                <h1 className="hero__title">
-                    Your Private AI Co-Mentor
-                </h1>
-                <p className="hero__subtitle">
-                    A real-time AI that listens to mentor sessions, learns their knowledge & style,
-                    and privately answers your questions — in any language, including sign language.
-                </p>
-            </section>
+            <div className="app__body">
+                <Sidebar
+                    activePage={activePage}
+                    onNavigate={handleNavigate}
+                    isConnected={isConnected}
+                    sessionId={sessionId}
+                    isOverlay={isOverlay}
+                />
 
-            {/* Features */}
-            <section className="features">
-                {features.map((f, i) => (
-                    <div key={i} className="feature-card">
-                        <span className="feature-card__icon">{f.icon}</span>
-                        <h3 className="feature-card__title">{f.title}</h3>
-                        <p className="feature-card__desc">{f.desc}</p>
-                    </div>
-                ))}
-            </section>
+                <main className="app__main">
+                    {activePage === 'dashboard' && (
+                        <Dashboard
+                            isConnected={isConnected}
+                            sessionStatus={sessionStatus}
+                            sessionId={sessionId}
+                            onStartSession={startNewSession}
+                            onNavigate={handleNavigate}
+                        />
+                    )}
+                    {activePage === 'session' && (
+                        <SessionView
+                            sessionId={sessionId}
+                            transcripts={transcripts}
+                            answers={answers}
+                            onSendQuestion={sendQuestion}
+                            onLeaveSession={leaveSession}
+                            onStartSession={startNewSession}
+                            isConnected={isConnected}
+                        />
+                    )}
+                    {activePage === 'settings' && (
+                        <div className="settings-placeholder">
+                            <h2>Settings</h2>
+                            <p>Configuration options will be available in future phases.</p>
+                        </div>
+                    )}
+                </main>
+            </div>
 
-            {/* Footer */}
-            <footer className="footer">
-                <div>WhisperMentor AI © 2026 — Private, Multilingual, Intelligent</div>
-                <div className="footer__hotkey">
-                    Toggle overlay: <kbd className="kbd">Ctrl</kbd> + <kbd className="kbd">Shift</kbd> + <kbd className="kbd">M</kbd>
-                </div>
-            </footer>
+            <StatusBar
+                isConnected={isConnected}
+                sessionId={sessionId}
+                isOverlay={isOverlay}
+                onToggleOverlay={handleToggleOverlay}
+                elapsed={elapsed}
+            />
         </div>
     );
 }
