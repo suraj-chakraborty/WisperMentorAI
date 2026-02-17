@@ -78,14 +78,14 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                         <span className="connection-value">{isCapturing ? 'Active' : 'Idle'}</span>
                     </div>
                     <div className="connection-item">
-                        <span className="connection-dot connection-dot--off" />
+                        <span className="connection-dot connection-dot--on" />
                         <span className="connection-label">Transcription</span>
-                        <span className="connection-value">Phase 3</span>
+                        <span className="connection-value">Online</span>
                     </div>
                     <div className="connection-item">
-                        <span className="connection-dot connection-dot--off" />
+                        <span className="connection-dot connection-dot--on" />
                         <span className="connection-label">Knowledge Graph</span>
-                        <span className="connection-value">Phase 4</span>
+                        <span className="connection-value">Online</span>
                     </div>
                 </div>
             </div>

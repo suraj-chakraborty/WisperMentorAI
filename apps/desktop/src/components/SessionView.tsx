@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
+import ReactMarkdown from 'react-markdown';
 
 interface SessionViewProps {
     sessionId: string | null;
@@ -182,7 +183,9 @@ export function SessionView({
                                     {a.text && (
                                         <div className="qa-msg__answer">
                                             <span className="qa-msg__label">AI Mentor</span>
-                                            <p>{a.text}</p>
+                                            <div className="markdown-body">
+                                                <ReactMarkdown>{a.text}</ReactMarkdown>
+                                            </div>
                                         </div>
                                     )}
                                     {!a.text && (
