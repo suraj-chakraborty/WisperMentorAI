@@ -14,6 +14,8 @@ interface SessionViewProps {
     audioLevel: number;
     error: string | null;
     onToggleCapture: () => void;
+    isMicEnabled: boolean;
+    toggleMic: () => void;
 }
 
 export function SessionView({
@@ -28,6 +30,8 @@ export function SessionView({
     audioLevel,
     error,
     onToggleCapture,
+    isMicEnabled,
+    toggleMic,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -100,6 +104,30 @@ export function SessionView({
                         <span className="session__rec-dot" />
                         {isCapturing ? 'Recording' : 'Start Rec'}
                     </button>
+                    {isCapturing && (
+                        <button
+                            onClick={toggleMic}
+                            className={`session__mic-btn ${isMicEnabled ? 'session__mic-btn--on' : ''}`}
+                            title={isMicEnabled ? 'Mute Mic' : 'Unmute Mic'}
+                            style={{
+                                marginLeft: '10px',
+                                padding: '8px 16px',
+                                borderRadius: '20px',
+                                border: 'none',
+                                background: isMicEnabled ? '#10b981' : '#374151',
+                                color: 'white',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontWeight: 600,
+                                fontSize: '14px'
+                            }}
+                        >
+                            <span>{isMicEnabled ? '🎤' : '🔇'}</span>
+                            {isMicEnabled ? 'Mic ON' : 'Mic OFF'}
+                        </button>
+                    )}
                     {isCapturing && (
                         <div className="session__level-meter">
                             <div

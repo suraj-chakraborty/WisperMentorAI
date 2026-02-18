@@ -64,27 +64,30 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
     try:
         # Faster-Whisper needs a file path or binary stream.
-        # We can save to temp file or pass bytes if supported.
-        # For simplicity/robustness, save to temp file.
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
 
-        # Transcribe with VAD and higher beam size for better accuracy
-        segments, info = model.transcribe(
-            tmp_path, 
-            beam_size=5, 
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
-            initial_prompt="Live mentoring session. Technical discussion.",
-            condition_on_previous_text=False,
-            repetition_penalty=1.2
-        )
-        
-        full_text = ""
-        for segment in segments:
-            full_text += segment.text + " "
+        # Define blocking task
+        def process_transcription(path):
+            segments, info = model.transcribe(
+                path, 
+                beam_size=5, 
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                initial_prompt="Live mentoring session. Technical discussion.",
+                condition_on_previous_text=False,
+                repetition_penalty=1.2
+            )
+            # Consume generator to force execution
+            text = " ".join([segment.text for segment in segments])
+            return text, info
+
+        # Run in threadpool
+        import asyncio
+        loop = asyncio.get_running_loop()
+        full_text, info = await loop.run_in_executor(None, process_transcription, tmp_path)
 
         # Cleanup
         os.remove(tmp_path)
@@ -97,6 +100,8 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.remove(tmp_path)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/embed")

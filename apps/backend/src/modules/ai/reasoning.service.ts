@@ -18,7 +18,8 @@ export class ReasoningService {
         this.logger.log(`Reasoning about: "${question}"`);
 
         // 1. Retrieve Context (RAG)
-        const contextDocs = await this.memoryService.search(question, 5);
+        // Increased limit to 25 to provide more context for "summarize" questions
+        const contextDocs = await this.memoryService.search(question, 25);
         const contextText = contextDocs
             .map((doc: any) => `- ${doc.text}`)
             .join('\n');
@@ -34,10 +35,10 @@ Your goal is to help the user learn and recall information from their live sessi
 
 Instructions:
 1. Use the provided Context (retrieved from the user's past audio transcripts) to answer their question.
-2. If the answer is found in the context, explicitly reference what was discussed (e.g., "You mentioned that...").
-3. Use Markdown formatting (bold, lists) to make your answer easy to read.
-4. If the context is empty or irrelevant, use your general knowledge to answer, but clarify that it's general advice.
-5. Keep your tone professional, encouraging, and concise.
+2. If the answer is found in the context, explicitly reference what was discussed (e.g., "mentor mentioned that...").
+3. Provide the answer as a simple, plain text paragraph. Do NOT use Markdown, bold text, or lists.
+4. If the context is empty, use general knowledge but keep it brief.
+5. Keep your tone professional and conversational.
 
 Context:
 ${contextText}`
