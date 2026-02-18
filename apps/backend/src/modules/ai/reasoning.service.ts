@@ -1,8 +1,8 @@
-
 import { Injectable, Logger } from '@nestjs/common';
 import { MemoryService } from '../memory/memory.service';
 import { LlmService, ChatMessage } from './llm.service';
 import { SettingsService } from '../settings/settings.service';
+import { TranscriptService } from '../transcript/transcript.service';
 
 @Injectable()
 export class ReasoningService {
@@ -11,14 +11,15 @@ export class ReasoningService {
     constructor(
         private readonly memoryService: MemoryService,
         private readonly llmService: LlmService,
-        private readonly settingsService: SettingsService
+        private readonly settingsService: SettingsService,
+        private readonly transcriptService: TranscriptService
     ) { }
 
     async ask(question: string, sessionId: string): Promise<string> {
+        // ... (existing ask method) ...
         this.logger.log(`Reasoning about: "${question}"`);
 
         // 1. Retrieve Context (RAG)
-        // Increased limit to 25 to provide more context for "summarize" questions
         const contextDocs = await this.memoryService.search(question, 25);
         const contextText = contextDocs
             .map((doc: any) => `- ${doc.text}`)
@@ -26,61 +27,91 @@ export class ReasoningService {
 
         this.logger.debug(`Retrieved ${contextDocs.length} relevant memories.`);
 
+        const messages: ChatMessage[] = [
+            {
+                role: 'system',
+                content: `You are WhisperMentor. Answer the question based on the context.`
+            },
+            {
+                role: 'user',
+                content: `Context:\n${contextText}\n\nQuestion: ${question}`
+            }
+        ];
+
+        // Fetch Settings
+        const settings = await this.settingsService.getRawSettings('demo-user');
+        const llmConfig = settings.llm || {};
+
+        return this.llmService.generateResponse(messages, {
+            provider: llmConfig.provider || 'ollama',
+            apiKey: llmConfig.apiKey,
+            model: llmConfig.model
+        });
+    }
+
+    async generateSessionSummary(sessionId: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[] }> {
+        this.logger.log(`Generating summary for session: ${sessionId}`);
+
+        // 1. Fetch Transcripts
+        const transcripts = await this.transcriptService.getTranscripts(sessionId);
+        if (!transcripts.length) {
+            return { summary: "No transcripts found for this session.", actionItems: [], keyDecisions: [] };
+        }
+
+        const fullText = transcripts
+            .map(t => `${t.speaker}: ${t.text}`)
+            .join('\n');
+
         // 2. Construct Prompt
         const messages: ChatMessage[] = [
             {
                 role: 'system',
-                content: `You are WhisperMentor, an expert AI assistant and mentor.
-Your goal is to help the user learn and recall information from their live sessions.
+                content: `You are an expert AI meeting assistant.
+Your goal is to summarize the following meeting transcript into a concise executive summary, extracting action items and key decisions.
 
-Instructions:
-1. Use the provided Context (retrieved from the user's past audio transcripts) to answer their question.
-2. If the answer is found in the context, explicitly reference what was discussed (e.g., "mentor mentioned that...").
-3. Provide the answer as a simple, plain text paragraph. Do NOT use Markdown, bold text, or lists.
-4. If the context is empty, use general knowledge but keep it brief.
-5. Keep your tone professional and conversational.
+Output MUST be a valid JSON object with the following structure:
+{
+  "summary": "A concise paragraph (3-5 sentences) summarizing the main topics.",
+  "actionItems": ["List of tasks", "Task 2"],
+  "keyDecisions": ["Decision 1", "Decision 2"]
+}
 
-Context:
-${contextText}`
+Do not include markdown blocks like \`\`\`json. Just the raw JSON.
+If there are no action items or decisions, return empty arrays.`
             },
             {
                 role: 'user',
-                content: question
+                content: `Transcript:\n${fullText}`
             }
         ];
 
-        // 3. Get User Settings
-        // TODO: Get userId from Session -> User
-        // For now, fetch raw settings for default user or from env if needed
-        // Since we don't have easy session->user lookup yet without DB call, 
-        // we'll use a hack or implement retrieval.
-        // Better: Pass userId from EventsGateway (requires session lookup there)
+        // 3. Call LLM
+        const settings = await this.settingsService.getRawSettings('demo-user');
+        const llmConfig = settings.llm || {};
 
-        // Mock lookup for hackathon speed:
-        // Assume single user setup or first user found
-        // OR, just use LlmService default if no settings.
+        const responseText = await this.llmService.generateResponse(messages, {
+            provider: llmConfig.provider || 'ollama',
+            apiKey: llmConfig.apiKey,
+            model: llmConfig.model
+        });
 
-        // Let's try to get settings for a known user if available.
-        // Actually, let's implement getMentorIdFromSession in MemoryService?
-        // Or just pass config as "undefined" and let LlmService fallback to Ollama/Env.
-
-        // REAL IMPLEMENTATION:
-        // const userId = await this.memoryService.getUserId(sessionId);
-        // const settings = await this.settingsService.getRawSettings(userId);
-        // const llmConfig = settings.llm;
-
-        // HACK: Use default user or hardcoded ID in controller?
-        // We'll leave config undefined for now to use Ollama default, 
-        // UNTIL we wire up the User lookup.
-
-        // But the requirement is to use the settings.
-        // So I MUST wire up user lookup.
-        // Start simple: Fetch ANY user settings (assuming single user usage).
-        const allUsers = await this.settingsService.findAllUsers(); // Need to implement this helper
-        const user = allUsers[0];
-        const config = user?.settings?.llm;
-
-        // 4. Generate Answer
-        return this.llmService.generateResponse(messages, config);
+        // 4. Parse JSON
+        try {
+            // Cleanup potential markdown
+            const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const result = JSON.parse(cleanJson);
+            return {
+                summary: result.summary || "Summary generation failed.",
+                actionItems: result.actionItems || [],
+                keyDecisions: result.keyDecisions || []
+            };
+        } catch (e) {
+            this.logger.error(`Failed to parse summary JSON: ${e}`);
+            return {
+                summary: responseText, // Fallback to raw text
+                actionItems: [],
+                keyDecisions: []
+            };
+        }
     }
 }

@@ -10,6 +10,40 @@ interface DashboardProps {
 }
 
 export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onNavigate }: DashboardProps) {
+    const [sessions, setSessions] = React.useState<any[]>([]);
+    const [loading, setLoading] = React.useState(false);
+
+    // Fetch sessions on mount
+    React.useEffect(() => {
+        fetchSessions();
+    }, []);
+
+    const fetchSessions = async () => {
+        try {
+            const res = await fetch('http://localhost:3001/sessions');
+            if (res.ok) {
+                const data = await res.json();
+                setSessions(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch sessions", e);
+        }
+    };
+
+    const handleGenerateSummary = async (id: string) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`http://localhost:3001/sessions/${id}/summarize`, { method: 'POST' });
+            if (res.ok) {
+                await fetchSessions(); // Refresh to show new summary
+            }
+        } catch (e) {
+            console.error("Summary failed", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="dashboard">
             {/* Welcome Card */}
@@ -31,10 +65,6 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                             <span className="btn__icon">◉</span>
                             Start New Session
                         </button>
-                        <button className="btn btn--secondary" onClick={() => onNavigate('session')}>
-                            <span className="btn__icon">↗</span>
-                            Join Session
-                        </button>
                     </div>
                 </div>
                 <div className="dashboard__welcome-visual">
@@ -42,7 +72,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                 </div>
             </div>
 
-            {/* Stats Grid */}
+            {/* Stats Grid - Restored */}
             <div className="dashboard__stats">
                 <div className="stat-card">
                     <div className="stat-card__value">{isConnected ? '✓' : '✗'}</div>
@@ -54,16 +84,12 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                     <div className="stat-card__label">Active Sessions</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-card__value">0</div>
-                    <div className="stat-card__label">Transcripts</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-card__value">0</div>
-                    <div className="stat-card__label">Questions Asked</div>
+                    <div className="stat-card__value">{sessions.length}</div>
+                    <div className="stat-card__label">Total Sessions</div>
                 </div>
             </div>
 
-            {/* Connection Details */}
+            {/* Connection Details - Restored */}
             <div className="dashboard__connection">
                 <h3 className="dashboard__section-title">System Status</h3>
                 <div className="connection-grid">
@@ -90,10 +116,61 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                 </div>
             </div>
 
-            {/* Hotkey Hint */}
-            <div className="dashboard__hint">
-                <kbd className="kbd">Ctrl</kbd> + <kbd className="kbd">Shift</kbd> + <kbd className="kbd">M</kbd>
-                <span>Toggle overlay mode</span>
+            {/* Session History */}
+            <div className="dashboard__hx">
+                <h3 className="dashboard__section-title">Recent Sessions</h3>
+                {sessions.length === 0 ? (
+                    <div className="dashboard__empty-hx">No sessions recorded yet.</div>
+                ) : (
+                    <div className="session-list">
+                        {sessions.map(s => (
+                            <div key={s.id} className="session-card">
+                                <div className="session-card__header">
+                                    <span className="session-card__date">
+                                        {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString()}
+                                    </span>
+                                    <span className={`session-card__status ${s.endedAt ? 'ended' : 'active'}`}>
+                                        {s.endedAt ? 'Completed' : 'Active'}
+                                    </span>
+                                </div>
+
+                                {s.summary ? (
+                                    <div className="session-card__summary">
+                                        <h4>📝 Executive Summary</h4>
+                                        <p>{s.summary}</p>
+                                        {s.actionItems && s.actionItems.length > 0 && (
+                                            <div className="session-card__actions">
+                                                <h5>Action Items:</h5>
+                                                <ul>
+                                                    {s.actionItems.map((item: string, i: number) => (
+                                                        <li key={i}>{item}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="session-card__no-summary">
+                                        <p>No summary available.</p>
+                                        {s.endedAt && (
+                                            <button
+                                                className="btn btn--sm btn--secondary"
+                                                onClick={() => handleGenerateSummary(s.id)}
+                                                disabled={loading}
+                                            >
+                                                {loading ? 'Generating...' : '✨ Generate AI Summary'}
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="session-card__stats">
+                                    <span>💬 {s._count?.transcripts || 0} transcripts</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

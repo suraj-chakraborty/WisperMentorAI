@@ -83,14 +83,54 @@ export function useSocket(): UseSocketReturn {
         });
 
         socket.on('answer:response', (data: { questionId: string; text: string; confidence: number }) => {
-            setAnswers((prev) => [
-                ...prev,
-                {
-                    ...data,
-                    question: '',
-                    timestamp: new Date(),
-                },
-            ]);
+            setAnswers((prev) => {
+                const idx = prev.findIndex(a => a.questionId === data.questionId) || prev.length - 1;
+                // If questionId matches, update. If not found, append (should trigger unexpected behavior but safer).
+                // Actually, the `sendQuestion` adds an entry with `questionId`.
+                // But the ID generated in `useSocket` (q_123) might differ from backend unless backend echoes it?
+                // Backend generates NEW ID: `q_${Date.now()}`.
+                // Wait, EventsGateway (Step 2429 line 117): `questionId: q_${Date.now()}`.
+                // It does NOT use the client's ID.
+                // This breaks the mapping!
+
+                // FIX: modifying `state` to just append is fine if we assume single stream.
+                // But `setAnswers` update logic in Step 2452 was:
+                // `setAnswers(prev => [...prev, { ...data }])`.
+                // It ADDS a new entry.
+                // But `sendQuestion` ALREADY added an entry with text=''.
+                // So we have TWO entries: one Loading, one Done.
+                // The Loading one stays Loading forever!
+
+                // I need to MATCH the response to the request.
+                // But Backend generates a NEW ID.
+                // Backend should ECHO the client-provided ID or Client should wait for ID?
+                // `sendQuestion` (Step 2452) generates `questionId`.
+                // It sends `text`. It does NOT send `questionId`.
+
+                // I MUST update Backend to accept `questionId` or Frontend to handle this.
+                // Simplest: Just replace the last "Loading" entry?
+
+                // Let's rewrite this logic.
+                const newAnswers = [...prev];
+                const lastIdx = newAnswers.length - 1;
+                if (lastIdx >= 0 && !newAnswers[lastIdx].text) {
+                    newAnswers[lastIdx] = { ...newAnswers[lastIdx], text: data.text, confidence: data.confidence };
+                } else {
+                    newAnswers.push({ ...data, question: '', timestamp: new Date(), questionId: data.questionId });
+                }
+                return newAnswers;
+            });
+        });
+
+        socket.on('answer:error', (data: { message: string }) => {
+            setAnswers((prev) => {
+                const newAnswers = [...prev];
+                const lastIdx = newAnswers.length - 1;
+                if (lastIdx >= 0 && !newAnswers[lastIdx].text) {
+                    newAnswers[lastIdx] = { ...newAnswers[lastIdx], text: `❌ ${data.message}` };
+                }
+                return newAnswers;
+            });
         });
 
         return () => {
@@ -138,9 +178,21 @@ export function useSocket(): UseSocketReturn {
         [sessionId],
     );
 
-    const startNewSession = useCallback(() => {
-        const newId = `session_${Date.now()}`;
-        joinSession(newId);
+    const startNewSession = useCallback(async () => {
+        try {
+            const res = await fetch('http://localhost:3001/sessions', { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                joinSession(data.id);
+            } else {
+                console.error("Failed to create session");
+            }
+        } catch (e) {
+            console.error("Error creating session", e);
+            // Fallback (e.g. offline)
+            const newId = `session_${Date.now()}`;
+            joinSession(newId);
+        }
     }, [joinSession]);
 
     const sendAudioChunk = useCallback(

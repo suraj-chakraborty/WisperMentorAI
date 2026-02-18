@@ -59,6 +59,8 @@ model Session {
   endedAt     DateTime?
   transcripts Transcript[]
   questions   Question[]
+  summary     String?      // AI-generated summary
+  actionItems Json?        @default("[]") // List of extracted tasks
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
