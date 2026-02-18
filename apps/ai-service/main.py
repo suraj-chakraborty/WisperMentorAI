@@ -79,9 +79,12 @@ def process_transcription(path):
                         
                         logger.info(f"Diarization RMS - Left (Sys): {rms_left:.4f}, Right (Mic): {rms_right:.4f}")
                         
-                        # Threshold: Mic must be > System to be "You"
-                        if rms_right > rms_left: 
+                        # Threshold: if Mic is significant (ratio > 0.2) and active (> 500)
+                        # We allow Mic to be quieter than System because System is often full-volume.
+                        if rms_right > 500 and (rms_right > rms_left * 0.2): 
                             speaker = "You"
+                        elif rms_right > rms_left: # Fallback
+                             speaker = "You"
     except Exception as e:
         logger.error(f"Diarization failed: {e}")
 

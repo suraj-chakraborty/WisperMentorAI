@@ -9,6 +9,19 @@ export class SessionService {
 
     async createSession(mentorId: string) {
         this.logger.log(`Creating session for mentor: ${mentorId}`);
+
+        // Ensure user exists (Hackathon mode)
+        await this.prisma.user.upsert({
+            where: { id: mentorId },
+            update: {},
+            create: {
+                id: mentorId,
+                email: `${mentorId}@example.com`,
+                name: 'Demo User',
+                settings: {},
+            },
+        });
+
         return this.prisma.session.create({
             data: {
                 mentorId,
@@ -29,6 +42,13 @@ export class SessionService {
         return this.prisma.session.findUnique({
             where: { id: sessionId },
             include: { transcripts: true },
+        });
+    }
+
+    async getAllSessions() {
+        return this.prisma.session.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: { _count: { select: { transcripts: true, questions: true } } }
         });
     }
 }

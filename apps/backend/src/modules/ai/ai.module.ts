@@ -7,8 +7,10 @@ import { ReasoningService } from './reasoning.service';
 import { MemoryModule } from '../memory/memory.module';
 import { SettingsModule } from '../settings/settings.module';
 
+import { TranscriptModule } from '../transcript/transcript.module';
+
 @Module({
-    imports: [HttpModule, ConfigModule, MemoryModule, SettingsModule],
+    imports: [HttpModule, ConfigModule, MemoryModule, SettingsModule, TranscriptModule],
     providers: [AiService, LlmService, ReasoningService],
     exports: [AiService, LlmService, ReasoningService],
 })

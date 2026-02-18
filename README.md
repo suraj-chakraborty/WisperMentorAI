@@ -72,8 +72,8 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 | 1 | Electron Desktop App & Overlay | **Complete** |
 | 2 | System Audio Capture (WebRTC) | **Complete** |
 | 3 | Real-Time ASR Integration | **Complete** |
-| 4 | Semantic Knowledge Base (Neo4j + Vector) | Planned |
-| 5 | AI Reasoning Engine & Private Q&A | Planned |
+| 4 | Semantic Knowledge Base (Neo4j + Vector) | **Complete** |
+| 5 | AI Reasoning Engine & Private Q&A | **Complete** |
 
 ### progress till now
 - **Custom frameless window** with branded TitleBar (drag, minimize, maximize, close)
@@ -93,6 +93,12 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 - **AI Microservice** — Dedicated Python FastAPI service for high-performance inference (`127.0.0.1:8000`).
 - **Robust Audio Pipeline** — Audio is captured as **WAV chunks**, ensuring compatibility and stability.
 - **Live Transcription** — Real-time text updates in the Overlay and Session View.
+- **Microphone Support** — Capture BOTH system audio and user microphone for full dialog context.
+- **audio distinguish sustem** — Basic RMS-based heuristic to distinguish User vs System audio.
+- **Meeting Insights** — Generate **Executive Summaries**, **Action Items**, and **Key Decisions** from past sessions.
+- **Second Brain (RAG)** — Real-time ingestion of transcripts into deeper semantic memory (Neo4j + Vector Embeddings).
+- **Live Q&A** — Ask questions during the meeting; the AI answers using context from the current discussion.
+- **Settings Panel** — Configure your AI Provider (**Ollama**, **Gemini**, **OpenAI**, **Anthropic**) and manage API keys securely.
 
 ---
 

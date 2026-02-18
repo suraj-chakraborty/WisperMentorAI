@@ -134,7 +134,7 @@ export class LlmService {
                 model: model || 'llama3',
                 messages,
                 temperature: 0.7,
-            })
+            }, { timeout: 10000 }) // 10s timeout
         );
         return response.data.choices[0].message.content;
     }
