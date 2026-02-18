@@ -6,6 +6,8 @@ export interface AudioCaptureState {
     error: string | null;
     startCapture: () => Promise<void>;
     stopCapture: () => void;
+    isMicEnabled: boolean;
+    toggleMic: () => void;
 }
 
 interface UseAudioCaptureProps {
@@ -162,7 +164,44 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
         setAudioLevel(0);
     }, []);
 
-    return { isCapturing, audioLevel, error, startCapture, stopCapture };
+    const [isMicEnabled, setIsMicEnabled] = useState(false);
+    const micStreamRef = useRef<MediaStream | null>(null);
+    const micGainRef = useRef<GainNode | null>(null);
+
+    const toggleMic = useCallback(async () => {
+        if (!audioContextRef.current) return;
+
+        const newState = !isMicEnabled;
+        setIsMicEnabled(newState);
+
+        if (newState) {
+            // Enable Mic
+            try {
+                if (!micStreamRef.current) {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    micStreamRef.current = stream;
+
+                    const source = audioContextRef.current.createMediaStreamSource(stream);
+                    const gain = audioContextRef.current.createGain();
+                    gain.gain.value = 1.0;
+                    source.connect(gain);
+                    gain.connect(analyserRef.current!); // Connect to existing analyser (mixer)
+                    micGainRef.current = gain;
+                } else {
+                    // Unmute
+                    if (micGainRef.current) micGainRef.current.gain.value = 1.0;
+                }
+            } catch (e) {
+                console.error("Mic access failed:", e);
+                setIsMicEnabled(false);
+            }
+        } else {
+            // Disable (Mute)
+            if (micGainRef.current) micGainRef.current.gain.value = 0;
+        }
+    }, [isMicEnabled]);
+
+    return { isCapturing, audioLevel, error, startCapture, stopCapture, isMicEnabled, toggleMic };
 }
 
 // 🔊 Utils

@@ -33,6 +33,8 @@ function App() {
         startCapture,
         stopCapture,
         error: audioError,
+        isMicEnabled,
+        toggleMic,
     } = useAudioCapture({
         onAudioChunk: (chunk) => sendAudioChunk(chunk),
     });
@@ -130,6 +132,8 @@ function App() {
                             audioLevel={audioLevel}
                             error={audioError}
                             onToggleCapture={handleToggleCapture}
+                            isMicEnabled={isMicEnabled}
+                            toggleMic={toggleMic}
                         />
                     )}
                     {activePage === 'settings' && (

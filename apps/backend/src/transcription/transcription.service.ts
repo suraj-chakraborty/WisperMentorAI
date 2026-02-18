@@ -10,7 +10,7 @@ export class TranscriptionService {
     private readonly aiServiceUrl = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
 
     constructor(private readonly httpService: HttpService) {
-        this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: true });
+        this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: false });
     }
 
     async transcribe(audioBuffer: Buffer): Promise<string> {

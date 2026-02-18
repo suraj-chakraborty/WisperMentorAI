@@ -72,7 +72,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         @MessageBody() data: { sessionId: string; chunk: ArrayBuffer },
     ) {
         const size = data.chunk.byteLength;
-        this.logger.debug(`🎙 Audio chunk: ${size} bytes for session ${data.sessionId}`);
+        // this.logger.debug(`🎙 Audio chunk: ${size} bytes for session ${data.sessionId}`);
 
         // Echo a fake transcript update periodically to show activity
         // Always emit for demo purposes
