@@ -89,6 +89,7 @@ function App() {
                     answers={answers}
                     onSendQuestion={sendQuestion}
                     onToggleOverlay={handleToggleOverlay}
+                    audioLevel={audioLevel}
                 />
             </div>
         );
@@ -134,6 +135,7 @@ function App() {
                             onToggleCapture={handleToggleCapture}
                             isMicEnabled={isMicEnabled}
                             toggleMic={toggleMic}
+                            onToggleOverlay={handleToggleOverlay}
                         />
                     )}
                     {activePage === 'settings' && (

@@ -18,4 +18,4 @@ python -m pip install -r requirements.txt
 
 # Run the service
 Write-Host "Starting AI Service..."
-python -m uvicorn main:app --port 8000
+python -m uvicorn main:app --port 8000 --reload
