@@ -79,19 +79,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Process audio with AI Service
         try {
             const buffer = Buffer.from(data.chunk);
-            const text = await this.transcriptionService.transcribe(buffer);
+            const result = await this.transcriptionService.transcribe(buffer);
 
-            if (text) {
+            if (result.text) {
                 // Emit real transcript
                 this.server.to(`session:${data.sessionId}`).emit('transcript:update', {
                     id: `t_${Date.now()}`,
-                    speaker: 'Speaker', // TODO: Speaker diarization
-                    text,
+                    speaker: result.speaker,
+                    text: result.text,
                     timestamp: new Date(),
                 });
 
                 // Save to Semantic Memory (Fire & Forget)
-                this.memoryService.saveTranscript(data.sessionId, text, 'Speaker')
+                this.memoryService.saveTranscript(data.sessionId, result.text, result.speaker)
                     .catch(e => this.logger.error(`Failed to save memory: ${e}`));
             }
         } catch (error) {

@@ -16,6 +16,7 @@ interface SessionViewProps {
     onToggleCapture: () => void;
     isMicEnabled: boolean;
     toggleMic: () => void;
+    onToggleOverlay: () => void;
 }
 
 export function SessionView({
@@ -32,6 +33,7 @@ export function SessionView({
     onToggleCapture,
     isMicEnabled,
     toggleMic,
+    onToggleOverlay,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -152,9 +154,18 @@ export function SessionView({
                         Q&A ({answers.length})
                     </button>
                 </div>
-                <button className="btn btn--ghost btn--sm" onClick={onLeaveSession}>
-                    End Session
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                        className="btn btn--secondary btn--sm"
+                        onClick={onToggleOverlay}
+                        title="Pop out into floating window"
+                    >
+                        ⤡ Overlay
+                    </button>
+                    <button className="btn btn--ghost btn--sm" onClick={onLeaveSession}>
+                        End Session
+                    </button>
+                </div>
             </div>
 
             {/* Content Area */}

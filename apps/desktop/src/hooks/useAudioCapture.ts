@@ -75,17 +75,34 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             const ctx = new AudioContext();
             audioContextRef.current = ctx;
 
-            const source = ctx.createMediaStreamSource(audioStream);
+            // Stereo Pipeline
+            const merger = ctx.createChannelMerger(2);
+
+            // 1. System Audio -> Channel 0 (Left)
+            const desktopNode = ctx.createMediaStreamSource(audioStream);
+            desktopNode.connect(merger, 0, 0);
+
+            // 2. Mic Audio -> Channel 1 (Right)
+            // We'll connect this later in toggleMic, but for now prepare the path.
+            // Actually, we need to connect "micGain" to "merger" input 1.
+            const micGain = ctx.createGain();
+            micGain.gain.value = 0; // Start muted
+            micGain.connect(merger, 0, 1);
+            micGainRef.current = micGain;
+
+            // Visualization (Mix for analyser)
             const analyser = ctx.createAnalyser();
             analyser.fftSize = 256;
             analyser.smoothingTimeConstant = 0.8;
-            source.connect(analyser);
+            merger.connect(analyser); // Analyser will downmix 
             analyserRef.current = analyser;
             animFrameRef.current = requestAnimationFrame(monitorLevel);
 
+            // Processor (Stereo)
             const bufferSize = 4096;
-            const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
+            const processor = ctx.createScriptProcessor(bufferSize, 2, 2);
             processorRef.current = processor;
+            merger.connect(processor);
 
             const sampleRate = ctx.sampleRate;
             let audioChunks: Float32Array[] = [];
@@ -98,15 +115,26 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             const MAX_MS = 60000;
 
             processor.onaudioprocess = e => {
-                const input = e.inputBuffer.getChannelData(0);
-                const chunk = new Float32Array(input);
-                audioChunks.push(chunk);
-                totalSamples += chunk.length;
+                // Get Stereo Data
+                const left = e.inputBuffer.getChannelData(0);
+                const right = e.inputBuffer.getChannelData(1);
 
+                // Interleave for processing/sending
+                const interleaved = new Float32Array(left.length * 2);
                 let sum = 0;
-                for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
-                const rms = Math.sqrt(sum / chunk.length);
-                const level = Math.min(100, Math.round(rms * 100));
+                for (let i = 0; i < left.length; i++) {
+                    interleaved[i * 2] = left[i];
+                    interleaved[i * 2 + 1] = right[i];
+                    // RMS calculation (mono mix for VAD)
+                    const val = (left[i] + right[i]) / 2;
+                    sum += val * val;
+                }
+
+                audioChunks.push(interleaved);
+                totalSamples += left.length; // We count frames, not samples
+
+                const rms = Math.sqrt(sum / left.length);
+                const level = Math.min(100, Math.round(rms * 100 * 5)); // Boost level for visibility
                 setAudioLevel(level);
 
                 const now = Date.now();
@@ -120,30 +148,29 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             const flush = () => {
                 if (!audioChunks.length) return;
 
-                const merged = new Float32Array(totalSamples);
+                // Merge chunks
+                const totalFrames = totalSamples;
+                const mergedStream = new Float32Array(totalFrames * 2);
                 let offset = 0;
                 for (const c of audioChunks) {
-                    merged.set(c, offset);
+                    mergedStream.set(c, offset);
                     offset += c.length;
                 }
 
-                const resampled = downsample(merged, sampleRate, 16000);
-                console.log(`[Audio] Flush: ${merged.length} samples -> ${resampled.length} samples`);
+                // Resample (Stereo Resampling is tricky. We'll restart with strict logic)
+                const resampled = downsampleStereo(mergedStream, sampleRate, 16000);
+                console.log(`[Audio] Flush: ${mergedStream.length / 2} frames -> ${resampled.length / 2} frames (Stereo)`);
 
-                const withContext = new Float32Array(lastTailRef.current.length + resampled.length);
-                withContext.set(lastTailRef.current);
-                withContext.set(resampled, lastTailRef.current.length);
+                // We don't do context overlap here for simplification in stereo yet
+                // Just send the chunk
+                onAudioChunk(encodeWAVStereo(resampled, 16000));
 
-                onAudioChunk(encodeWAV(withContext, 16000));
-
-                lastTailRef.current = resampled.slice(Math.max(0, resampled.length - OVERLAP_SAMPLES));
                 audioChunks = [];
                 totalSamples = 0;
                 startTime = Date.now();
                 lastSpeech = Date.now();
             };
 
-            source.connect(processor);
             const mute = ctx.createGain();
             mute.gain.value = 0;
             processor.connect(mute);
@@ -151,6 +178,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
 
             setIsCapturing(true);
         } catch (e: any) {
+            console.error(e);
             setError(e.message || 'Audio capture failed');
         }
     }, [monitorLevel, onAudioChunk]);
@@ -168,8 +196,13 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     const micStreamRef = useRef<MediaStream | null>(null);
     const micGainRef = useRef<GainNode | null>(null);
 
+    // Helper for toggleMic - now we just attach/detach stream to the existing micGain
+    // But micGain is already connected to merger. So we just feed data into micGain.
+
+    // We need to re-implement toggleMic to feed the micGainRef we created in startCapture
+
     const toggleMic = useCallback(async () => {
-        if (!audioContextRef.current) return;
+        if (!audioContextRef.current || !micGainRef.current) return;
 
         const newState = !isMicEnabled;
         setIsMicEnabled(newState);
@@ -180,31 +213,27 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
                 if (!micStreamRef.current) {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     micStreamRef.current = stream;
-
                     const source = audioContextRef.current.createMediaStreamSource(stream);
-                    const gain = audioContextRef.current.createGain();
-                    gain.gain.value = 1.0;
-                    source.connect(gain);
-                    gain.connect(analyserRef.current!); // Connect to existing analyser (mixer)
-                    micGainRef.current = gain;
+                    source.connect(micGainRef.current);
+                    micGainRef.current.gain.value = 1.0;
                 } else {
-                    // Unmute
-                    if (micGainRef.current) micGainRef.current.gain.value = 1.0;
+                    micGainRef.current.gain.value = 1.0;
                 }
             } catch (e) {
-                console.error("Mic access failed:", e);
+                console.error(e);
                 setIsMicEnabled(false);
             }
         } else {
-            // Disable (Mute)
-            if (micGainRef.current) micGainRef.current.gain.value = 0;
+            micGainRef.current.gain.value = 0;
         }
     }, [isMicEnabled]);
+
 
     return { isCapturing, audioLevel, error, startCapture, stopCapture, isMicEnabled, toggleMic };
 }
 
-// 🔊 Utils
+// 🔊 Utils 
+
 function downsample(buffer: Float32Array, inRate: number, outRate: number) {
     if (outRate === inRate) return buffer;
     const ratio = inRate / outRate;
@@ -215,6 +244,28 @@ function downsample(buffer: Float32Array, inRate: number, outRate: number) {
         const idx = Math.floor(pos);
         const frac = pos - idx;
         result[i] = buffer[idx] * (1 - frac) + (buffer[idx + 1] || 0) * frac;
+    }
+    return result;
+}
+
+function downsampleStereo(buffer: Float32Array, inRate: number, outRate: number) {
+    if (outRate === inRate) return buffer;
+    const ratio = inRate / outRate;
+    const newLen = Math.round(buffer.length / ratio);
+    // Ensure even length for stereo
+    const safeLen = newLen % 2 === 0 ? newLen : newLen - 1;
+
+    const result = new Float32Array(safeLen);
+
+    for (let i = 0; i < safeLen; i += 2) {
+        // Frame index in input
+        const pos = (i / 2) * ratio;
+        const idx = Math.floor(pos) * 2; // Index in interleaved buffer
+
+        // Nearest neighbor for speed (or linear interp)
+        // Simple decimation is safer for stereo phasing
+        result[i] = buffer[idx];     // Left
+        result[i + 1] = buffer[idx + 1]; // Right
     }
     return result;
 }
@@ -234,6 +285,32 @@ function encodeWAV(samples: Float32Array, rate: number): ArrayBuffer {
     view.setUint32(28, rate * 2, true);
     view.setUint16(32, 2, true);
     view.setUint16(34, 16, true);
+    write(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return buffer;
+}
+
+function encodeWAVStereo(samples: Float32Array, rate: number): ArrayBuffer {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    const write = (o: number, s: string) => [...s].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+
+    write(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    write(8, 'WAVEfmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 2, true); // Channels = 2 (Stereo)
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 4, true); // ByteRate = rate * channels * bytesPerSample
+    view.setUint16(32, 4, true);        // BlockAlign = channels * bytesPerSample
+    view.setUint16(34, 16, true);       // BitsPerSample
     write(36, 'data');
     view.setUint32(40, samples.length * 2, true);
 
