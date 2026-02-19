@@ -2,12 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
 import ReactMarkdown from 'react-markdown';
 import SourcePicker from './SourcePicker';
+import { generateMarkdown, generateText, downloadFile } from '../utils/exportUtils';
 
 interface SessionViewProps {
     sessionId: string | null;
     transcripts: TranscriptEntry[];
     answers: AnswerEntry[];
-    onSendQuestion: (text: string) => void;
+    onSendQuestion: (text: string, language?: string) => void;
     onLeaveSession: () => void;
     onStartSession: () => void;
     isConnected: boolean;
@@ -20,6 +21,8 @@ interface SessionViewProps {
     onToggleOverlay: () => void;
     onToggleTranslation: (enabled: boolean) => void;
     isTranslationEnabled: boolean;
+    isPaused: boolean;
+    togglePause: () => void;
 }
 
 export function SessionView({
@@ -39,6 +42,8 @@ export function SessionView({
     onToggleOverlay,
     onToggleTranslation,
     isTranslationEnabled,
+    isPaused,
+    togglePause,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -47,8 +52,15 @@ export function SessionView({
     const [elapsed, setElapsed] = useState(0);
 
     // Source Picker State (Moved up to fix hooks error)
+    // Source Picker State
     const [showSourcePicker, setShowSourcePicker] = useState(false);
     const [selectedSourceId, setSelectedSourceId] = useState<string | undefined>(undefined);
+    const [showExportMenu, setShowExportMenu] = useState(false);
+
+    // Translation State
+    const [translations, setTranslations] = useState<Record<number, string>>({});
+    const [targetLang, setTargetLang] = useState('es');
+    const translatingRef = useRef<Set<number>>(new Set());
 
     // Auto-scroll transcript
     useEffect(() => {
@@ -69,6 +81,58 @@ export function SessionView({
         return () => clearInterval(interval);
     }, [sessionId]);
 
+    // Translation Effect
+    useEffect(() => {
+        if (!isTranslationEnabled || !sessionId) return;
+
+        const translateNew = async () => {
+            // Identify untranslated items
+            const toTranslate = transcripts.map((t, i) => ({ t, i }))
+                .filter(({ t, i }) => !translations[i] && !translatingRef.current.has(i) && t.text.trim());
+
+            for (const { t, i } of toTranslate) {
+                translatingRef.current.add(i);
+                try {
+                    const response = await fetch('http://127.0.0.1:3001/translation/translate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: t.text, targetLang })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        setTranslations(prev => ({ ...prev, [i]: data.translation }));
+                    }
+                } catch (error) {
+                    console.error('Translation error:', error);
+                } finally {
+                    translatingRef.current.delete(i);
+                }
+            }
+        };
+
+        translateNew();
+    }, [transcripts, isTranslationEnabled, targetLang, sessionId, translations]);
+
+    // Fetch User Settings for Default Language
+    useEffect(() => {
+        const loadSettings = async () => {
+            try {
+                const res = await fetch('http://127.0.0.1:3001/settings', {
+                    headers: { 'x-user-id': 'demo-user' }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.lingo?.preferredLanguage) {
+                        setTargetLang(data.lingo.preferredLanguage);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load settings in SessionView", e);
+            }
+        };
+        loadSettings();
+    }, []);
+
     const formatTime = (s: number) => {
         const m = Math.floor(s / 60);
         const sec = s % 60;
@@ -78,7 +142,10 @@ export function SessionView({
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (inputText.trim()) {
-            onSendQuestion(inputText.trim());
+            // Pass targetLang if translation is enabled
+            // Pass targetLang if translation is enabled
+            const lang = isTranslationEnabled ? targetLang : undefined;
+            onSendQuestion(inputText.trim(), lang);
             setInputText('');
         }
     };
@@ -121,6 +188,19 @@ export function SessionView({
         (onToggleCapture as any)(id);
     };
 
+    const handleExport = (type: 'markdown' | 'text') => {
+        if (!sessionId) return;
+        const filename = `session-${new Date().toISOString().slice(0, 10)}.${type === 'markdown' ? 'md' : 'txt'}`;
+        let content = '';
+        if (type === 'markdown') {
+            content = generateMarkdown(sessionId, transcripts, answers, translations);
+        } else {
+            content = generateText(sessionId, transcripts, answers, translations);
+        }
+        downloadFile(filename, content, type);
+        setShowExportMenu(false);
+    };
+
     return (
         <div className="session">
             {showSourcePicker && (
@@ -140,8 +220,29 @@ export function SessionView({
                             title={isCapturing ? 'Stop Recording' : 'Start Recording'}
                         >
                             <span className="session__rec-dot" />
-                            {isCapturing ? 'Recording' : 'Start Rec'}
+                            {isCapturing ? (isPaused ? 'Resume' : 'Recording') : 'Start Rec'}
                         </button>
+
+                        {isCapturing && (
+                            <button
+                                className={`btn btn--sm ${isPaused ? 'btn--primary' : 'btn--secondary'}`}
+                                onClick={togglePause}
+                                title={isPaused ? 'Resume Recording' : 'Pause Recording'}
+                                style={{
+                                    marginLeft: '8px',
+                                    borderRadius: '50%',
+                                    width: '32px',
+                                    height: '32px',
+                                    padding: 0,
+                                    marginRight: '8px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                {isPaused ? '▶' : '⏸'}
+                            </button>
+                        )}
 
                         {!isCapturing && (
                             <button
@@ -192,14 +293,42 @@ export function SessionView({
                         </div>
                     )}
                     <span className="session__timer">{formatTime(elapsed)}</span>
-                    <button
-                        className={`btn btn--sm ${isTranslationEnabled ? 'btn--primary' : 'btn--secondary'}`}
-                        onClick={() => onToggleTranslation(!isTranslationEnabled)}
-                        title="Translate non-English speech to English"
-                        style={{ marginLeft: '10px' }}
-                    >
-                        {isTranslationEnabled ? '🌐 Translating' : '🌐 Translate'}
-                    </button>
+
+                    <div className="flex items-center gap-2 ml-2">
+                        {isTranslationEnabled && (
+                            <select
+                                value={targetLang}
+                                onChange={(e) => {
+                                    setTargetLang(e.target.value);
+                                    setTranslations({}); // Clear cache on lang change
+                                }}
+                                className="bg-slate-800 text-white text-xs rounded border border-slate-600 px-2 py-1 outline-none"
+                            >
+                                <option value="en">English</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="zh">Chinese</option>
+                                <option value="ja">Japanese</option>
+                                <option value="pt">Portuguese</option>
+                                <option value="it">Italian</option>
+                                <option value="ru">Russian</option>
+                                <option value="hi">Hindi</option>
+                                <option value="ko">Korean</option>
+                                <option value="nl">Dutch</option>
+                                <option value="tr">Turkish</option>
+                                <option value="pl">Polish</option>
+                                <option value="sv">Swedish</option>
+                            </select>
+                        )}
+                        <button
+                            className={`btn btn--sm ${isTranslationEnabled ? 'btn--primary' : 'btn--secondary'}`}
+                            onClick={() => onToggleTranslation(!isTranslationEnabled)}
+                            title="Translate non-English speech"
+                        >
+                            {isTranslationEnabled ? '🌐 On' : '🌐 Translate'}
+                        </button>
+                    </div>
                 </div>
 
                 <div className="session__tabs">
@@ -224,6 +353,38 @@ export function SessionView({
                     >
                         ⤡ Overlay
                     </button>
+
+                    <div className="relative" style={{ position: 'relative' }}>
+                        <button
+                            className="btn btn--secondary btn--sm"
+                            onClick={() => setShowExportMenu(!showExportMenu)}
+                            title="Export Session"
+                        >
+                            📥 Export
+                        </button>
+                        {showExportMenu && (
+                            <div className="absolute right-0 mt-2 w-32 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 flex flex-col overflow-hidden" style={{ position: 'absolute', top: '100%', right: 0, zIndex: 50, background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', marginTop: '4px' }}>
+                                <button
+                                    className="px-4 py-2 text-left text-sm hover:bg-slate-700 text-white w-full"
+                                    onClick={() => handleExport('markdown')}
+                                    style={{ padding: '8px 16px', textAlign: 'left', cursor: 'pointer', background: 'transparent', border: 'none', color: 'white', display: 'block', width: '100%' }}
+                                    onMouseOver={(e) => e.currentTarget.style.background = '#334155'}
+                                    onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                                >
+                                    Markdown (.md)
+                                </button>
+                                <button
+                                    className="px-4 py-2 text-left text-sm hover:bg-slate-700 text-white w-full border-t border-slate-700"
+                                    onClick={() => handleExport('text')}
+                                    style={{ padding: '8px 16px', textAlign: 'left', cursor: 'pointer', background: 'transparent', border: 'none', color: 'white', display: 'block', width: '100%', borderTop: '1px solid #334155' }}
+                                    onMouseOver={(e) => e.currentTarget.style.background = '#334155'}
+                                    onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                                >
+                                    Text (.txt)
+                                </button>
+                            </div>
+                        )}
+                    </div>
                     <button className="btn btn--ghost btn--sm" onClick={onLeaveSession}>
                         End Session
                     </button>
@@ -265,6 +426,11 @@ export function SessionView({
                                     <span className="transcript-msg__time">
                                         {t.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
+                                    {isTranslationEnabled && translations[i] && (
+                                        <div className="transcript-msg__translation mt-1 text-indigo-300 text-sm italic border-l-2 border-indigo-500 pl-2">
+                                            {translations[i]}
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         )}

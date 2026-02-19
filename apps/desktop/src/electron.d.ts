@@ -11,6 +11,7 @@ declare global {
             getOverlayStatus: () => Promise<boolean>;
             onOverlayToggled: (callback: (isOverlay: boolean) => void) => void;
             onToggleMic: (callback: () => void) => void;
+            onMeetingDetected: (callback: (appName: string) => void) => void;
             getDesktopSources: () => Promise<any[]>;
             startAudioCapture: () => Promise<void>;
             stopAudioCapture: () => Promise<void>;

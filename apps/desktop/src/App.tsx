@@ -17,6 +17,7 @@ function AuthenticatedApp({ token }: { token: string }) {
     const [isOverlay, setIsOverlay] = useState(false);
     const [elapsed, setElapsed] = useState(0);
     const [isTranslationEnabled, setIsTranslationEnabled] = useState(false);
+    const [meetingAlertApp, setMeetingAlertApp] = useState<string | null>(null);
 
     const {
         isConnected,
@@ -40,6 +41,8 @@ function AuthenticatedApp({ token }: { token: string }) {
         error: audioError,
         isMicEnabled,
         toggleMic,
+        isPaused,
+        togglePause,
     } = useAudioCapture({
         onAudioChunk: (chunk) => sendAudioChunk(chunk),
     });
@@ -54,10 +57,25 @@ function AuthenticatedApp({ token }: { token: string }) {
         const handleMicToggle = () => toggleMic();
         window.electronAPI?.onToggleMic(handleMicToggle);
 
+        // Listen for meeting detection
+        window.electronAPI?.onMeetingDetected((appName: string) => {
+            if (!isCapturing && !sessionId) {
+                setMeetingAlertApp(appName);
+                // Switch to dashboard if needed, or overlay?
+                // If in overlay mode, we should probably stay there or expand?
+                if (isOverlay) {
+                    // Maybe show a specific overlay alert?
+                } else {
+                    window.electronAPI?.maximizeWindow();
+                }
+            }
+        });
+
         return () => {
             window.electronAPI?.removeListener('mic:toggle');
+            window.electronAPI?.removeListener('meeting:detected');
         };
-    }, [toggleMic]);
+    }, [toggleMic, isCapturing, sessionId, isOverlay]);
 
     // Session timer
     useEffect(() => {
@@ -158,6 +176,8 @@ function AuthenticatedApp({ token }: { token: string }) {
                             onToggleOverlay={handleToggleOverlay}
                             onToggleTranslation={handleToggleTranslation}
                             isTranslationEnabled={isTranslationEnabled}
+                            isPaused={isPaused}
+                            togglePause={togglePause}
                         />
                     )}
                     {activePage === 'settings' && (
@@ -173,6 +193,38 @@ function AuthenticatedApp({ token }: { token: string }) {
                 onToggleOverlay={handleToggleOverlay}
                 elapsed={elapsed}
             />
+
+            {/* Meeting Alert Modal */}
+            {meetingAlertApp && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}>
+                    <div className="bg-slate-800 border border-slate-700 p-6 rounded-xl shadow-2xl max-w-sm w-full text-center" style={{ background: '#1e293b', padding: '24px', borderRadius: '12px', border: '1px solid #334155', maxWidth: '300px' }}>
+                        <div className="text-4xl mb-4">🎥</div>
+                        <h3 className="text-xl font-bold text-white mb-2">Meeting Detected</h3>
+                        <p className="text-slate-300 mb-6">
+                            <strong>{meetingAlertApp}</strong> is running. Would you like to start a session?
+                        </p>
+                        <div className="flex gap-3 justify-center" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                            <button
+                                onClick={() => setMeetingAlertApp(null)}
+                                className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700"
+                                style={{ padding: '8px 16px', color: '#cbd5e1', background: 'transparent', border: '1px solid #475569', borderRadius: '6px', cursor: 'pointer' }}
+                            >
+                                No
+                            </button>
+                            <button
+                                onClick={() => {
+                                    startNewSession();
+                                    setMeetingAlertApp(null);
+                                }}
+                                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
+                                style={{ padding: '8px 16px', color: 'white', background: '#4f46e5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                            >
+                                Start Recording
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

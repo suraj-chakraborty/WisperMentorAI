@@ -22,6 +22,8 @@ let mainWindow = null;
 let tray = null;
 let isOverlayMode = false;
 let isQuitting = false;
+let meetingCheckInterval = null;
+let lastDetectedMeetingApp = null;
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const DIST = process.env.DIST || path__namespace.join(__dirname, "../dist");
 const VITE_PUBLIC = process.env.VITE_PUBLIC || path__namespace.join(__dirname, "../public");
@@ -62,6 +64,7 @@ function createMainWindow() {
       mainWindow == null ? void 0 : mainWindow.hide();
     }
   });
+  startMeetingDetection();
 }
 function toggleOverlay() {
   if (!mainWindow) return;
@@ -149,6 +152,40 @@ function registerIpcHandlers() {
     });
     return sources.map((s) => ({ id: s.id, name: s.name }));
   });
+}
+function startMeetingDetection() {
+  if (meetingCheckInterval) clearInterval(meetingCheckInterval);
+  meetingCheckInterval = setInterval(async () => {
+    if (!mainWindow) return;
+    try {
+      const sources = await electron.desktopCapturer.getSources({ types: ["window"] });
+      const meetingApps = ["Zoom Meeting", "Microsoft Teams", "Meet - ", "Webex"];
+      let detectedApp = null;
+      for (const source of sources) {
+        for (const app2 of meetingApps) {
+          if (source.name.includes(app2)) {
+            detectedApp = app2 === "Meet - " ? "Google Meet" : app2.replace(" Meeting", "");
+            break;
+          }
+        }
+        if (detectedApp) break;
+      }
+      if (detectedApp && detectedApp !== lastDetectedMeetingApp) {
+        lastDetectedMeetingApp = detectedApp;
+        mainWindow.webContents.send("meeting:detected", detectedApp);
+        const { Notification } = require("electron");
+        new Notification({
+          title: "Meeting Detected",
+          body: `${detectedApp} is running. Start WhisperMentor?`,
+          silent: true
+        }).show();
+      } else if (!detectedApp) {
+        lastDetectedMeetingApp = null;
+      }
+    } catch (error) {
+      console.error("Error detecting meetings:", error);
+    }
+  }, 5e3);
 }
 electron.app.whenReady().then(() => {
   registerIpcHandlers();

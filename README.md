@@ -66,7 +66,14 @@ whispermentor-ai/
 - **Backend:** NestJS, Socket.IO, Prisma ORM
 - **Infrastructure:** Docker, Redis (BullMQ), PostgreSQL
 - **AI/ML Logic:** Faster-Whisper, spaCy, OpenAI/Gemini, Pinecone/FAISS, Neo4j
+- **Translation:** Lingo.dev (High-accuracy Technical Translation) with LLM Fallback
 - **Sign Language:** MediaPipe, TensorFlow, Three.js (for avatars)
+
+## Lingo.dev Integration
+We have integrated **Lingo.dev** to provide specialized, high-context translation for technical discussions.
+- **How it works:** When a `LINGO_DEV_API_KEY` is present in the `.env` file, the system prioritizes Lingo.dev's API for translation requests.
+- **Fallback Mechanism:** If the API key is missing or the service is unreachable, the system automatically falls back to the user's configured LLM (e.g., Ollama, OpenAI) to ensure uninterrupted service.
+- **Purpose:** Enhances translation accuracy for domain-specific terminology often found in mentoring sessions.
 
 ## Development Status
 We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop App**.
@@ -109,6 +116,9 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 - **Enhanced Audio** — Integrated **Noise Suppression**, **Echo Cancellation**, and **High-Pass Filtering** for crystal clear voice capture.
 - **User Authentication** — Secure JWT-based Login/Signup system with encrypted password storage.
 - **Session History** — View past sessions, auto-load context when re-joining, and seamless history backfill.
+- **Export Options** — Export session transcripts and Q&A to **Markdown** or **Text** files for easy sharing.
+- **Pause/Resume** — Pause recording during breaks without ending the session; resumes seamlessly.
+- **Meeting Detection** — Auto-detects **Zoom**, **Teams**, **Google Meet**, or **Webex** windows and prompts to start recording.
 
 ---
 

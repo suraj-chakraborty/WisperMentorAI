@@ -57,4 +57,9 @@ export class SessionsController {
 
         return updated;
     }
+
+    @Get(':id/graph')
+    async getSessionGraph(@Param('id') id: string) {
+        return this.memoryService.getKnowledgeGraph(id);
+    }
 }

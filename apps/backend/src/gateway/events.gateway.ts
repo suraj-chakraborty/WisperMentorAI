@@ -171,7 +171,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('answer:thinking', { question: data.text });
 
         try {
-            const answer = await this.reasoningService.ask(data.text, data.sessionId);
+            const answer = await this.reasoningService.ask(data.text, data.sessionId, data.language);
 
             client.emit('answer:response', {
                 questionId: `q_${Date.now()}`,

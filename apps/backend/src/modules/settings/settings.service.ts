@@ -15,7 +15,10 @@ export class SettingsService {
 
         // HACKATHON MODE: Return default if user missing
         if (!user) {
-            return { llm: { provider: 'ollama', apiKey: '', model: '' } };
+            return {
+                llm: { provider: 'ollama', apiKey: '', model: '' },
+                lingo: { apiKey: '', preferredLanguage: 'es' }
+            };
         }
 
         const settings = user.settings as any;
@@ -23,6 +26,9 @@ export class SettingsService {
         // Mask API Key
         if (settings?.llm?.apiKey) {
             settings.llm.apiKey = '********';
+        }
+        if (settings?.lingo?.apiKey) {
+            settings.lingo.apiKey = '********';
         }
 
         return settings;
@@ -46,13 +52,18 @@ export class SettingsService {
                 ...dto.llm,
             };
 
-            // If apiKey is masked/empty in update, keep old one?
-            // Current logic: If user sends "********", ignore it.
-            // If user sends empty string, clear it?
-            // If user sends new key, update it.
-
             if (dto.llm.apiKey === '********') {
                 newSettings.llm.apiKey = currentSettings.llm?.apiKey;
+            }
+        }
+
+        if (dto.lingo) {
+            newSettings.lingo = {
+                ...currentSettings.lingo,
+                ...dto.lingo,
+            };
+            if (dto.lingo.apiKey === '********') {
+                newSettings.lingo.apiKey = currentSettings.lingo?.apiKey;
             }
         }
 

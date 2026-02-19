@@ -3,6 +3,7 @@ import { MemoryService } from '../memory/memory.service';
 import { LlmService, ChatMessage } from './llm.service';
 import { SettingsService } from '../settings/settings.service';
 import { TranscriptService } from '../transcript/transcript.service';
+import { TranslationService } from '../translation/translation.service';
 
 @Injectable()
 export class ReasoningService {
@@ -12,10 +13,11 @@ export class ReasoningService {
         private readonly memoryService: MemoryService,
         private readonly llmService: LlmService,
         private readonly settingsService: SettingsService,
-        private readonly transcriptService: TranscriptService
+        private readonly transcriptService: TranscriptService,
+        private readonly translationService: TranslationService
     ) { }
 
-    async ask(question: string, sessionId: string): Promise<string> {
+    async ask(question: string, sessionId: string, targetLang?: string): Promise<string> {
         // ... (existing ask method) ...
         this.logger.log(`Reasoning about: "${question}"`);
 
@@ -36,7 +38,14 @@ export class ReasoningService {
         const messages: ChatMessage[] = [
             {
                 role: 'system',
-                content: `You are WhisperMentor. Answer the question based on the context.${stylePrompt}`
+                content: `You are WhisperMentor. Answer the question based on the context.${stylePrompt}
+Return a JSON object with the following structure:
+{
+  "answer": "Your answer in English (or the language of the context if consistent)",
+  "quotes": ["Exact quote 1 from context used", "Exact quote 2 from context used"]
+}
+If no quotes are relevant, return empty array for quotes.
+DO NOT use markdown in the output. Just raw JSON.`
             },
             {
                 role: 'user',
@@ -49,11 +58,48 @@ export class ReasoningService {
         const llmConfig = settings.llm || {};
         const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
 
-        return this.llmService.generateResponse(messages, {
+        const response = await this.llmService.generateResponse(messages, {
             provider,
             apiKey: llmConfig.apiKey,
             model: llmConfig.model
         });
+
+        try {
+            const cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
+            const data = JSON.parse(cleanJson);
+            let answer = data.answer;
+            const quotes = data.quotes || [];
+
+            // Translation Logic
+            if (targetLang && targetLang !== 'en') {
+                // Translate Answer
+                answer = await this.translationService.translate(answer, targetLang);
+
+                // Format with Quotes
+                let formattedResponse = `${answer}\n\n`;
+
+                if (quotes.length > 0) {
+                    formattedResponse += `**Context (${targetLang.toUpperCase()}):**\n`;
+                    for (const quote of quotes) {
+                        const translatedQuote = await this.translationService.translate(quote, targetLang);
+                        formattedResponse += `> ${quote}\n> *${translatedQuote}*\n\n`;
+                    }
+                }
+                return formattedResponse;
+            } else {
+                // Standard Output (No targetLang or English)
+                let formattedResponse = `${answer}\n\n`;
+                if (quotes.length > 0) {
+                    formattedResponse += `**Context:**\n`;
+                    quotes.forEach((q: string) => formattedResponse += `> > ${q}\n`);
+                }
+                return formattedResponse;
+            }
+
+        } catch (e) {
+            this.logger.error(`Failed to parse Q&A JSON or Translate: ${e}`);
+            return response; // Fallback to raw response
+        }
     }
 
     async generateSessionSummary(sessionId: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[]; topics: string[] }> {
@@ -146,6 +192,7 @@ Output a JSON ARRAY of objects, where each object has:
 - "definition": String (Concise definition)
 - "examples": String[] (List of examples mentioned or implied)
 - "rules": String[] (Best practices, constraints, or rules mentioned)
+- "related_concepts": String[] (List of other concepts this one is related to)
 
 Example:
 [
@@ -153,7 +200,8 @@ Example:
     "name": "Validation Pipe",
     "definition": "A NestJS class to validate incoming request data.",
     "examples": ["UserDto validation"],
-    "rules": ["Always use with class-validator"]
+    "rules": ["Always use with class-validator"],
+    "related_concepts": ["DTO", "Middleware", "NestJS"]
   }
 ]
 

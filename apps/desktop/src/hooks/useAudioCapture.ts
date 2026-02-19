@@ -8,6 +8,8 @@ export interface AudioCaptureState {
     stopCapture: () => void;
     isMicEnabled: boolean;
     toggleMic: () => void;
+    isPaused: boolean;
+    togglePause: () => void;
 }
 
 interface UseAudioCaptureProps {
@@ -18,6 +20,8 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     const [isCapturing, setIsCapturing] = useState(false);
     const [audioLevel, setAudioLevel] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [isPaused, setIsPaused] = useState(false);
+    const isPausedRef = useRef(false);
 
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -120,6 +124,10 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             const MAX_MS = 60000;
 
             processor.onaudioprocess = e => {
+                if (isPausedRef.current) {
+                    setAudioLevel(0);
+                    return;
+                }
                 // Get Stereo Data
                 const left = e.inputBuffer.getChannelData(0);
                 const right = e.inputBuffer.getChannelData(1);
@@ -195,7 +203,16 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
         cancelAnimationFrame(animFrameRef.current);
         setIsCapturing(false);
         setAudioLevel(0);
+        setAudioLevel(0);
+        setIsPaused(false);
+        isPausedRef.current = false;
     }, []);
+
+    const togglePause = useCallback(() => {
+        const newState = !isPaused;
+        setIsPaused(newState);
+        isPausedRef.current = newState;
+    }, [isPaused]);
 
     const [isMicEnabled, setIsMicEnabled] = useState(false);
     const micStreamRef = useRef<MediaStream | null>(null);
@@ -261,7 +278,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     }, [isMicEnabled]);
 
 
-    return { isCapturing, audioLevel, error, startCapture, stopCapture, isMicEnabled, toggleMic };
+    return { isCapturing, audioLevel, error, startCapture, stopCapture, isMicEnabled, toggleMic, isPaused, togglePause };
 }
 
 // 🔊 Utils 

@@ -25,7 +25,7 @@ interface UseSocketReturn {
     answers: AnswerEntry[];
     joinSession: (sessionId: string) => void;
     leaveSession: () => void;
-    sendQuestion: (text: string) => void;
+    sendQuestion: (text: string, language?: string) => void;
     sendAudioChunk: (chunk: ArrayBuffer) => void;
     startNewSession: () => void;
     toggleTranslation: (enabled: boolean) => void;
@@ -41,7 +41,7 @@ export function useSocket(token: string): UseSocketReturn {
 
     useEffect(() => {
         // Connect to Backend
-        const socket = io('http://localhost:3001', {
+        const socket = io('http://127.0.0.1:3001', {
             auth: { token },
             transports: ['websocket'],
             reconnection: true,
@@ -167,7 +167,7 @@ export function useSocket(token: string): UseSocketReturn {
     }, [sessionId]);
 
     const sendQuestion = useCallback(
-        (text: string) => {
+        (text: string, language?: string) => {
             if (!sessionId || !text.trim()) return;
             const questionId = `q_${Date.now()}`;
 
@@ -186,6 +186,7 @@ export function useSocket(token: string): UseSocketReturn {
             socketRef.current?.emit('question:ask', {
                 sessionId,
                 text,
+                language,
             });
         },
         [sessionId],
@@ -193,7 +194,7 @@ export function useSocket(token: string): UseSocketReturn {
 
     const startNewSession = useCallback(async () => {
         try {
-            const res = await fetch('http://localhost:3001/sessions', { method: 'POST' });
+            const res = await fetch('http://127.0.0.1:3001/sessions', { method: 'POST' });
             if (res.ok) {
                 const data = await res.json();
                 joinSession(data.id);

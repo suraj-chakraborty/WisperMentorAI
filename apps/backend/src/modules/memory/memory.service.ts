@@ -125,6 +125,11 @@ export class MemoryService {
                     MERGE (r:Rule {text: rule}) 
                     MERGE (con)-[:HAS_RULE]->(r)
                 )
+
+                WITH c, con, sessionId
+                UNWIND c.related_concepts as related
+                MERGE (rel:Concept {name: related})
+                MERGE (con)-[:RELATED_TO]->(rel)
                 `,
                 { sessionId, concepts }
             );
@@ -196,6 +201,61 @@ export class MemoryService {
             this.logger.error(`Embedding failed: ${error}`);
             // Return empty or throw? Empty for now to convert to null or handle gracefully
             return [];
+        }
+    }
+
+    async getKnowledgeGraph(sessionId?: string): Promise<{ nodes: any[], links: any[] }> {
+        const session = this.neo4jService.getSession();
+        try {
+            // Fetch Concepts and relationships
+            // Optional filter by session if sessionId provided
+            // For now, we fetch the whole graph or subgraph connected to the session
+            let query = `
+                MATCH (c:Concept)
+                OPTIONAL MATCH (c)-[r:RELATED_TO]->(target:Concept)
+                RETURN c as source, target, type(r) as rel
+                LIMIT 100
+            `;
+
+            if (sessionId) {
+                query = `
+                    MATCH (s:Session {id: $sessionId})-[:MENTIONS]->(c:Concept)
+                    OPTIONAL MATCH (c)-[r:RELATED_TO]->(target:Concept)
+                    RETURN c as source, target, type(r) as rel
+                    LIMIT 200
+                `;
+            }
+
+            const result = await session.run(query, { sessionId });
+
+            const nodes = new Map();
+            const links: any[] = [];
+
+            result.records.forEach(record => {
+                const source = record.get('source');
+                const target = record.get('target'); // Can be null if OPTIONAL MATCH fails
+
+                if (source && source.properties) {
+                    nodes.set(source.properties.name, { id: source.properties.name, label: source.properties.name, type: 'Concept' });
+                }
+
+                if (target && target.properties) {
+                    nodes.set(target.properties.name, { id: target.properties.name, label: target.properties.name, type: 'Concept' });
+                    if (source) {
+                        links.push({ source: source.properties.name, target: target.properties.name, label: 'RELATED_TO' });
+                    }
+                }
+            });
+
+            return {
+                nodes: Array.from(nodes.values()),
+                links
+            };
+        } catch (error) {
+            this.logger.error(`Failed to get knowledge graph: ${error}`);
+            return { nodes: [], links: [] };
+        } finally {
+            await session.close();
         }
     }
 }
