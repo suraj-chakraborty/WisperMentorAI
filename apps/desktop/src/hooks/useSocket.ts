@@ -28,21 +28,22 @@ interface UseSocketReturn {
     sendQuestion: (text: string) => void;
     sendAudioChunk: (chunk: ArrayBuffer) => void;
     startNewSession: () => void;
+    toggleTranslation: (enabled: boolean) => void;
 }
 
-const BACKEND_URL = 'http://localhost:3001';
-
-export function useSocket(): UseSocketReturn {
+export function useSocket(token: string): UseSocketReturn {
     const socketRef = useRef<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
-    const [sessionStatus, setSessionStatus] = useState('disconnected');
+    const [sessionStatus, setSessionStatus] = useState<string>('idle');
     const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
     const [answers, setAnswers] = useState<AnswerEntry[]>([]);
 
     useEffect(() => {
-        const socket = io(BACKEND_URL, {
-            transports: ['websocket', 'polling'],
+        // Connect to Backend
+        const socket = io('http://localhost:3001', {
+            auth: { token },
+            transports: ['websocket'],
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
@@ -219,6 +220,11 @@ export function useSocket(): UseSocketReturn {
         [sessionId],
     );
 
+    const toggleTranslation = useCallback((enabled: boolean) => {
+        if (!sessionId) return;
+        socketRef.current?.emit('session:config', { sessionId, translate: enabled });
+    }, [sessionId]);
+
     return {
         isConnected,
         sessionId,
@@ -230,5 +236,6 @@ export function useSocket(): UseSocketReturn {
         sendQuestion,
         sendAudioChunk,
         startNewSession,
+        toggleTranslation,
     };
 }

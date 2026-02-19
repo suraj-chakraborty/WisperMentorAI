@@ -151,6 +151,9 @@ electron.app.whenReady().then(() => {
   createMainWindow();
   createTray();
   electron.globalShortcut.register("CommandOrControl+Shift+M", () => {
+    mainWindow == null ? void 0 : mainWindow.webContents.send("mic:toggle");
+  });
+  electron.globalShortcut.register("CommandOrControl+Shift+O", () => {
     if (mainWindow) {
       if (!mainWindow.isVisible()) {
         mainWindow.show();

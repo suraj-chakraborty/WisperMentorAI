@@ -17,6 +17,8 @@ interface SessionViewProps {
     isMicEnabled: boolean;
     toggleMic: () => void;
     onToggleOverlay: () => void;
+    onToggleTranslation: (enabled: boolean) => void;
+    isTranslationEnabled: boolean;
 }
 
 export function SessionView({
@@ -34,6 +36,8 @@ export function SessionView({
     isMicEnabled,
     toggleMic,
     onToggleOverlay,
+    onToggleTranslation,
+    isTranslationEnabled,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -139,7 +143,16 @@ export function SessionView({
                         </div>
                     )}
                     <span className="session__timer">{formatTime(elapsed)}</span>
+                    <button
+                        className={`btn btn--sm ${isTranslationEnabled ? 'btn--primary' : 'btn--secondary'}`}
+                        onClick={() => onToggleTranslation(!isTranslationEnabled)}
+                        title="Translate non-English speech to English"
+                        style={{ marginLeft: '10px' }}
+                    >
+                        {isTranslationEnabled ? '🌐 Translating' : '🌐 Translate'}
+                    </button>
                 </div>
+
                 <div className="session__tabs">
                     <button
                         className={`session__tab ${activeTab === 'transcript' ? 'session__tab--active' : ''}`}

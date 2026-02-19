@@ -13,6 +13,7 @@ import { TranscriptionService } from '../transcription/transcription.service';
 import { TranscriptService } from '../modules/transcript/transcript.service';
 import { MemoryService } from '../modules/memory/memory.service';
 import { ReasoningService } from '../modules/ai/reasoning.service';
+import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
     cors: {
@@ -31,15 +32,45 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         private readonly transcriptionService: TranscriptionService,
         private readonly transcriptService: TranscriptService,
         private readonly memoryService: MemoryService,
-        private readonly reasoningService: ReasoningService
+        private readonly reasoningService: ReasoningService,
+        private readonly jwtService: JwtService
     ) { }
 
+    private sessionSettings = new Map<string, { translate: boolean }>();
+
+    @SubscribeMessage('session:config')
+    handleSessionConfig(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() data: { sessionId: string; translate: boolean }
+    ) {
+        this.logger.log(`⚙️ Session ${data.sessionId} config update: Translate=${data.translate}`);
+        const current = this.sessionSettings.get(data.sessionId) || { translate: false };
+        this.sessionSettings.set(data.sessionId, { ...current, translate: data.translate });
+
+        // Broadcast config to other clients in session? 
+        // For now, it's global for the session.
+    }
+
     handleConnection(client: Socket) {
-        this.logger.log(`🔌 Client connected: ${client.id}`);
-        client.emit('session:status', {
-            status: 'connected',
-            message: 'Welcome to WhisperMentor AI',
-        });
+        try {
+            const token = client.handshake.auth.token || client.handshake.headers.authorization?.split(' ')[1];
+            if (!token) {
+                this.logger.warn(`🔌 Client ${client.id} tried to connect without token`);
+                client.disconnect();
+                return;
+            }
+            const user = this.jwtService.verify(token);
+            client.data.user = user;
+            this.logger.log(`🔌 Client connected: ${client.id} (${user.email})`);
+
+            client.emit('session:status', {
+                status: 'connected',
+                sessionId: null,
+            });
+        } catch (e: any) {
+            this.logger.error(`Authentication failed for ${client.id}: ${e.message}`);
+            client.disconnect();
+        }
     }
 
     handleDisconnect(client: Socket) {
@@ -100,7 +131,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Process audio with AI Service
         try {
             const buffer = Buffer.from(data.chunk);
-            const result = await this.transcriptionService.transcribe(buffer);
+            const settings = this.sessionSettings.get(data.sessionId);
+            const task = settings?.translate ? 'translate' : 'transcribe';
+
+            const result = await this.transcriptionService.transcribe(buffer, task);
 
             if (result.text) {
                 // Emit real transcript

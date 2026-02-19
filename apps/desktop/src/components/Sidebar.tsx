@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
     activePage: string;
@@ -15,6 +16,7 @@ const navItems = [
 ];
 
 export function Sidebar({ activePage, onNavigate, isConnected, sessionId, isOverlay }: SidebarProps) {
+    const { logout } = useAuth();
     if (isOverlay) return null;
 
     return (
@@ -33,6 +35,14 @@ export function Sidebar({ activePage, onNavigate, isConnected, sessionId, isOver
                 ))}
             </div>
 
+            <div className="sidebar__user-controls">
+                <button onClick={logout} className="sidebar__logout-btn" title="Logout">
+                    <span className="sidebar__icon">🚪</span>
+                    <span className="sidebar__label">Logout</span>
+                </button>
+            </div>
+
+
             <div className="sidebar__footer">
                 <div className={`sidebar__status ${isConnected ? 'sidebar__status--online' : 'sidebar__status--offline'}`}>
                     <span className="sidebar__status-dot" />
@@ -46,6 +56,6 @@ export function Sidebar({ activePage, onNavigate, isConnected, sessionId, isOver
                     </div>
                 )}
             </div>
-        </aside>
+        </aside >
     );
 }

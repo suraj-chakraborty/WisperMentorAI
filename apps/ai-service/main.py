@@ -104,7 +104,10 @@ def process_transcription(path):
     return text, info, speaker
 
 @app.post("/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    task: str = "transcribe"
+):
     if not model:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
@@ -118,7 +121,49 @@ async def transcribe_audio(file: UploadFile = File(...)):
         # Run in threadpool
         import asyncio
         loop = asyncio.get_running_loop()
-        full_text, info, speaker = await loop.run_in_executor(None, process_transcription, tmp_path)
+        
+        # We need to wrap the call to pass 'task'
+        def run_model():
+            logger.info(f"Processing transcription for path: {tmp_path} (Task: {task})")
+            import wave
+            speaker = "Meeting" # Default
+            
+            # Speaker Detection (Stereo RMS) - Same as before
+            try:
+                with wave.open(tmp_path, 'rb') as wf:
+                    if wf.getnchannels() == 2:
+                        frames = wf.readframes(wf.getnframes())
+                        audio = np.frombuffer(frames, dtype=np.int16)
+                        if len(audio) > 0:
+                            audio = audio.reshape(-1, 2)
+                            left = audio[:, 0].astype(np.float32)
+                            right = audio[:, 1].astype(np.float32)
+                            if len(left) > 0 and len(right) > 0:
+                                rms_left = np.sqrt(np.mean(left**2))
+                                rms_right = np.sqrt(np.mean(right**2))
+                                if rms_right > 500 and (rms_right > rms_left * 0.2): 
+                                    speaker = "You"
+                                elif rms_right > rms_left:
+                                     speaker = "You"
+            except Exception as e:
+                logger.error(f"Diarization failed: {e}")
+
+            # Transcribe with Task
+            segments, info = model.transcribe(
+                tmp_path, 
+                beam_size=5, 
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                initial_prompt="Live mentoring session. Technical discussion.",
+                condition_on_previous_text=False,
+                repetition_penalty=1.2,
+                task=task 
+            )
+            
+            text = " ".join([segment.text for segment in segments])
+            return text, info, speaker
+
+        full_text, info, speaker = await loop.run_in_executor(None, run_model)
 
         # Cleanup
         os.remove(tmp_path)

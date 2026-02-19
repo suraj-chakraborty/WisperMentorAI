@@ -18,6 +18,7 @@ export class SessionService {
                 id: mentorId,
                 email: `${mentorId}@example.com`,
                 name: 'Demo User',
+                password: 'demo_password_hash_placeholder',
                 settings: {},
             },
         });

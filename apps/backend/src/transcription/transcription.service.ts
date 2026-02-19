@@ -13,16 +13,18 @@ export class TranscriptionService {
         this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: false });
     }
 
-    async transcribe(audioBuffer: Buffer): Promise<{ text: string; speaker: string; language?: string }> {
+    async transcribe(audioBuffer: Buffer, task: 'transcribe' | 'translate' = 'transcribe'): Promise<{ text: string; speaker: string; language?: string }> {
         try {
             const form = new FormData();
             form.append('file', audioBuffer, {
                 filename: 'audio.wav',
                 contentType: 'audio/wav',
             });
+            // form-data doesn't support query params easily in append, so we use URL param
+            const url = `${this.aiServiceUrl}/transcribe?task=${task}`;
 
             const response = await firstValueFrom(
-                this.httpService.post(`${this.aiServiceUrl}/transcribe`, form, {
+                this.httpService.post(url, form, {
                     headers: {
                         ...form.getHeaders(),
                     },
