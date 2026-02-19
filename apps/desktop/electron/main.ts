@@ -5,6 +5,8 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isOverlayMode = false;
 let isQuitting = false;
+let meetingCheckInterval: NodeJS.Timeout | null = null;
+let lastDetectedMeetingApp: string | null = null;
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const DIST = process.env.DIST || path.join(__dirname, '../dist');
@@ -53,6 +55,8 @@ function createMainWindow(): void {
             mainWindow?.hide();
         }
     });
+
+    startMeetingDetection();
 }
 
 // ─── Overlay Toggle ─────────────────────────────────────────────
@@ -163,6 +167,50 @@ function registerIpcHandlers(): void {
         });
         return sources.map((s) => ({ id: s.id, name: s.name }));
     });
+}
+
+// ─── Meeting Detection ──────────────────────────────────────────
+
+function startMeetingDetection() {
+    if (meetingCheckInterval) clearInterval(meetingCheckInterval);
+
+    meetingCheckInterval = setInterval(async () => {
+        if (!mainWindow) return;
+
+        try {
+            const sources = await desktopCapturer.getSources({ types: ['window'] });
+            const meetingApps = ['Zoom Meeting', 'Microsoft Teams', 'Meet - ', 'Webex'];
+
+            let detectedApp: string | null = null;
+
+            for (const source of sources) {
+                for (const app of meetingApps) {
+                    if (source.name.includes(app)) {
+                        detectedApp = app === 'Meet - ' ? 'Google Meet' : app.replace(' Meeting', '');
+                        break;
+                    }
+                }
+                if (detectedApp) break;
+            }
+
+            if (detectedApp && detectedApp !== lastDetectedMeetingApp) {
+                lastDetectedMeetingApp = detectedApp;
+                mainWindow.webContents.send('meeting:detected', detectedApp);
+
+                // Optional: Show System Notification
+                const { Notification } = require('electron');
+                new Notification({
+                    title: 'Meeting Detected',
+                    body: `${detectedApp} is running. Start WhisperMentor?`,
+                    silent: true
+                }).show();
+            } else if (!detectedApp) {
+                lastDetectedMeetingApp = null;
+            }
+        } catch (error) {
+            console.error('Error detecting meetings:', error);
+        }
+    }, 5000); // Check every 5 seconds
 }
 
 // ─── App Lifecycle ──────────────────────────────────────────────

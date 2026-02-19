@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import './SettingsView.css';
 
 // API base url
-const API_URL = 'http://localhost:3001';
+const API_URL = 'http://127.0.0.1:3001';
 const USER_ID = 'demo-user'; // Hackathon mode
 
 export const SettingsView: React.FC = () => {
@@ -12,6 +12,10 @@ export const SettingsView: React.FC = () => {
             provider: 'ollama',
             apiKey: '',
             model: '',
+        },
+        lingo: {
+            apiKey: '',
+            preferredLanguage: 'es'
         },
         offlineMode: false
     });
@@ -29,12 +33,14 @@ export const SettingsView: React.FC = () => {
             });
             if (res.ok) {
                 const data = await res.json();
-                if (data.llm) {
-                    setSettings({
-                        ...settings,
-                        llm: { ...settings.llm, ...data.llm },
-                        offlineMode: data.offlineMode || false
-                    });
+                // Only update if there's relevant data
+                if (data.llm || data.lingo || data.offlineMode !== undefined) {
+                    setSettings((prevSettings: any) => ({
+                        ...prevSettings,
+                        llm: { ...prevSettings.llm, ...(data.llm || {}) },
+                        lingo: { ...prevSettings.lingo, ...(data.lingo || {}) },
+                        offlineMode: data.offlineMode !== undefined ? data.offlineMode : prevSettings.offlineMode
+                    }));
                 }
             }
         } catch (error) {
@@ -52,7 +58,11 @@ export const SettingsView: React.FC = () => {
                     'Content-Type': 'application/json',
                     'x-user-id': USER_ID
                 },
-                body: JSON.stringify({ llm: settings.llm, offlineMode: settings.offlineMode })
+                body: JSON.stringify({
+                    llm: settings.llm,
+                    lingo: settings.lingo,
+                    offlineMode: settings.offlineMode
+                })
             });
 
             if (res.ok) {
@@ -149,22 +159,65 @@ export const SettingsView: React.FC = () => {
 
                     {/* Model Name Input */}
                     <div className="settings__field">
-                        <label className="settings__label">
-                            Model Name <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(Optional)</span>
-                        </label>
-                        <div className="settings__input-group">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-slate-300">Model Name (Optional)</label>
                             <input
                                 type="text"
-                                placeholder="e.g. gpt-4-turbo, claude-3-opus, llama3"
-                                className="settings__input"
                                 value={settings.llm.model}
                                 onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, model: e.target.value } })}
+                                placeholder="e.g. llama3, gpt-4-turbo"
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
                             />
                         </div>
                         <p className="settings__hint">Leave empty to use the provider's default model.</p>
                     </div>
                 </div>
 
+                <div className="space-y-4 pt-4 border-t border-slate-800">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        🌍 Localization (Lingo.dev)
+                    </h3>
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm font-medium text-slate-300">Lingo.dev API Key (Optional)</label>
+                        <input
+                            type="password"
+                            value={settings.lingo?.apiKey || ''}
+                            onChange={(e) => setSettings({ ...settings, lingo: { ...settings.lingo, apiKey: e.target.value } })}
+                            placeholder="sk-..."
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <p className="text-xs text-slate-500">
+                            Leave blank to use LLM fallback for translation.
+                        </p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 mt-4">
+                        <label className="text-sm font-medium text-slate-300">Default Target Language</label>
+                        <div className="settings__input-group">
+                            <select
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none w-full"
+                                value={settings.lingo?.preferredLanguage || 'es'}
+                                onChange={(e) => setSettings({ ...settings, lingo: { ...settings.lingo, preferredLanguage: e.target.value } })}
+                            >
+                                <option value="en">English (English)</option>
+                                <option value="es">Spanish (Español)</option>
+                                <option value="fr">French (Français)</option>
+                                <option value="de">German (Deutsch)</option>
+                                <option value="zh">Chinese (中文)</option>
+                                <option value="ja">Japanese (日本語)</option>
+                                <option value="pt">Portuguese (Português)</option>
+                                <option value="it">Italian (Italiano)</option>
+                                <option value="ru">Russian (Русский)</option>
+                                <option value="hi">Hindi (हिंदी)</option>
+                                <option value="ko">Korean (한국어)</option>
+                                <option value="nl">Dutch (Nederlands)</option>
+                                <option value="tr">Turkish (Türkçe)</option>
+                                <option value="pl">Polish (Polski)</option>
+                                <option value="sv">Swedish (Svenska)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 {/* Save Section */}
                 <div className="settings__footer">
                     <div className="settings__status">

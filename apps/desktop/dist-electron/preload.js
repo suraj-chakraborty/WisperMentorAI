@@ -16,6 +16,9 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   onToggleMic: (callback) => {
     electron.ipcRenderer.on("mic:toggle", () => callback());
   },
+  onMeetingDetected: (callback) => {
+    electron.ipcRenderer.on("meeting:detected", (_event, appName) => callback(appName));
+  },
   // Audio capture
   getDesktopSources: () => electron.ipcRenderer.invoke("audio:get-sources"),
   startAudioCapture: () => electron.ipcRenderer.invoke("audio:start"),

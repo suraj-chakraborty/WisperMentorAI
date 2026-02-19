@@ -15,9 +15,24 @@ export class LlmConfigDto {
     model?: string;
 }
 
+export class LingoConfigDto {
+    @IsOptional()
+    @IsString()
+    apiKey?: string;
+
+    @IsOptional()
+    @IsString()
+    preferredLanguage?: string;
+}
+
 export class UpdateSettingsDto {
     @IsOptional()
     @ValidateNested()
     @Type(() => LlmConfigDto)
     llm?: LlmConfigDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => LingoConfigDto)
+    lingo?: LingoConfigDto;
 }
