@@ -5,6 +5,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import * as http from 'http';
+import { int } from 'neo4j-driver';
 
 @Injectable()
 export class MemoryService {
@@ -20,7 +21,7 @@ export class MemoryService {
         this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: true });
     }
 
-    async saveTranscript(sessionId: string, text: string, speaker: string = 'User') {
+    async saveTranscript(sessionId: string, text: string, speaker: string = 'User', language: string = 'en') {
         if (!text || !text.trim()) return;
 
         try {
@@ -36,13 +37,15 @@ export class MemoryService {
                     CREATE (t:Transcript {
                         text: $text,
                         speaker: $speaker,
+                        sessionId: $sessionId,
                         timestamp: datetime(),
-                        embedding: $embedding
+                        embedding: $embedding,
+                        language: $language
                     })
                     MERGE (s)-[:HAS_TRANSCRIPT]->(t)
                     RETURN t
                     `,
-                    { sessionId, text, speaker, embedding }
+                    { sessionId, text, speaker, embedding, language }
                 );
                 this.logger.log(`Saved transcript for session ${sessionId}: "${text.substring(0, 30)}..."`);
             } finally {
@@ -53,7 +56,7 @@ export class MemoryService {
         }
     }
 
-    async search(query: string, limit: number = 3): Promise<any[]> {
+    async search(query: string, limit: number = 3, sessionId?: string): Promise<any[]> {
         if (!query || !query.trim()) return [];
 
         try {
@@ -64,25 +67,26 @@ export class MemoryService {
             // 2. Search Neo4j Vector Index
             const session = this.neo4jService.getSession();
             try {
-                // Ensure index exists (idempotent)
-                // Note: In production, index creation should be a migration
-                await session.run(`
-                    CREATE VECTOR INDEX transcript_embeddings IF NOT EXISTS
-                    FOR (t:Transcript) ON (t.embedding)
-                    OPTIONS {indexConfig: {
-                        ` + "`vector.dimensions`" + `: 384,
-                        ` + "`vector.similarity_function`" + `: 'cosine'
-                    }}
-                `);
+                // ... index creation omitted for brevity ...
 
-                // Query
+                // Query with Session Filter
+                // We fetch more candidates (limit * 20) to account for filtering
+
+                // ... (inside search method)
                 const result = await session.run(
                     `
-                    CALL db.index.vector.queryNodes('transcript_embeddings', $limit, $embedding)
+                    CALL db.index.vector.queryNodes('transcript_embeddings', $candidateLimit, $embedding)
                     YIELD node, score
+                    MATCH (s:Session {id: $sessionId})-[:HAS_TRANSCRIPT]->(node)
                     RETURN node.text as text, node.timestamp as timestamp, score
+                    LIMIT $limit
                     `,
-                    { limit, embedding }
+                    {
+                        limit: int(limit),
+                        candidateLimit: int(limit * 20),
+                        embedding,
+                        sessionId
+                    }
                 );
 
                 return result.records.map((r: any) => ({

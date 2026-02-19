@@ -19,8 +19,8 @@ export class ReasoningService {
         // ... (existing ask method) ...
         this.logger.log(`Reasoning about: "${question}"`);
 
-        // 1. Retrieve Context (RAG)
-        const contextDocs = await this.memoryService.search(question, 25);
+        // 1. Retrieve Context (RAG) - Filter by SessionId
+        const contextDocs = await this.memoryService.search(question, 25, sessionId);
         const contextText = contextDocs
             .map((doc: any) => `- ${doc.text}`)
             .join('\n');
@@ -49,13 +49,13 @@ export class ReasoningService {
         });
     }
 
-    async generateSessionSummary(sessionId: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[] }> {
+    async generateSessionSummary(sessionId: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[]; topics: string[] }> {
         this.logger.log(`Generating summary for session: ${sessionId}`);
 
         // 1. Fetch Transcripts
         const transcripts = await this.transcriptService.getTranscripts(sessionId);
         if (!transcripts.length) {
-            return { summary: "No transcripts found for this session.", actionItems: [], keyDecisions: [] };
+            return { summary: "No transcripts found for this session.", actionItems: [], keyDecisions: [], topics: [] };
         }
 
         const fullText = transcripts
@@ -67,13 +67,14 @@ export class ReasoningService {
             {
                 role: 'system',
                 content: `You are an expert AI meeting assistant.
-Your goal is to summarize the following meeting transcript into a concise executive summary, extracting action items and key decisions.
+Your goal is to summarize the following meeting transcript into a concise executive summary, extracting action items, key decisions, and relevant topics.
 
 Output MUST be a valid JSON object with the following structure:
 {
   "summary": "A concise paragraph (3-5 sentences) summarizing the main topics.",
   "actionItems": ["List of tasks", "Task 2"],
-  "keyDecisions": ["Decision 1", "Decision 2"]
+  "keyDecisions": ["Decision 1", "Decision 2"],
+  "topics": ["Keyword1", "Keyword2", "Keyword3"]
 }
 
 Do not include markdown blocks like \`\`\`json. Just the raw JSON.
@@ -103,14 +104,16 @@ If there are no action items or decisions, return empty arrays.`
             return {
                 summary: result.summary || "Summary generation failed.",
                 actionItems: result.actionItems || [],
-                keyDecisions: result.keyDecisions || []
+                keyDecisions: result.keyDecisions || [],
+                topics: result.topics || []
             };
         } catch (e) {
             this.logger.error(`Failed to parse summary JSON: ${e}`);
             return {
                 summary: responseText, // Fallback to raw text
                 actionItems: [],
-                keyDecisions: []
+                keyDecisions: [],
+                topics: []
             };
         }
     }

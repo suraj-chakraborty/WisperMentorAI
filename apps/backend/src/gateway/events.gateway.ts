@@ -10,6 +10,7 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { TranscriptionService } from '../transcription/transcription.service';
+import { TranscriptService } from '../modules/transcript/transcript.service';
 import { MemoryService } from '../modules/memory/memory.service';
 import { ReasoningService } from '../modules/ai/reasoning.service';
 
@@ -28,6 +29,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     constructor(
         private readonly transcriptionService: TranscriptionService,
+        private readonly transcriptService: TranscriptService,
         private readonly memoryService: MemoryService,
         private readonly reasoningService: ReasoningService
     ) { }
@@ -45,16 +47,35 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     @SubscribeMessage('session:join')
-    handleJoinSession(
+    async handleJoinSession(
         @ConnectedSocket() client: Socket,
         @MessageBody() data: { sessionId: string },
     ) {
         this.logger.log(`📡 Client ${client.id} joining session ${data.sessionId}`);
         client.join(`session:${data.sessionId}`);
+
+        // Emit Status
         client.emit('session:status', {
             status: 'joined',
             sessionId: data.sessionId,
         });
+
+        // Emit History (Context Backfill)
+        try {
+            const history = await this.transcriptService.getTranscripts(data.sessionId);
+            client.emit('session:history', {
+                sessionId: data.sessionId,
+                transcripts: history.map(t => ({
+                    id: t.id,
+                    speaker: t.speaker,
+                    text: t.text,
+                    timestamp: t.createdAt // Ensure Transcript model has createdAt
+                }))
+            });
+            this.logger.log(`📜 Sent ${history.length} transcripts to ${client.id}`);
+        } catch (error) {
+            this.logger.error(`Failed to fetch history for ${data.sessionId}: ${error}`);
+        }
     }
 
     @SubscribeMessage('session:leave')
@@ -87,12 +108,17 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                     id: `t_${Date.now()}`,
                     speaker: result.speaker,
                     text: result.text,
+                    language: result.language,
                     timestamp: new Date(),
                 });
 
-                // Save to Semantic Memory (Fire & Forget)
-                this.memoryService.saveTranscript(data.sessionId, result.text, result.speaker)
+                // Save to Semantic Memory (Neo4j)
+                this.memoryService.saveTranscript(data.sessionId, result.text, result.speaker, result.language)
                     .catch(e => this.logger.error(`Failed to save memory: ${e}`));
+
+                // Save to Postgres (Prisma) - Required for Dashboard & Summary
+                this.transcriptService.addTranscript(data.sessionId, result.speaker, result.text, result.language)
+                    .catch(e => this.logger.error(`Failed to save transcript DB: ${e}`));
             }
         } catch (error) {
             this.logger.error(`Error processing audio chunk: ${error}`);

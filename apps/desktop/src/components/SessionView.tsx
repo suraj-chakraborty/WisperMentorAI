@@ -191,7 +191,14 @@ export function SessionView({
                         ) : (
                             transcripts.map((t, i) => (
                                 <div key={i} className="transcript-msg">
-                                    <span className="transcript-msg__speaker">{t.speaker}</span>
+                                    <span className="transcript-msg__speaker">
+                                        {t.speaker}
+                                        {t.language && t.language !== 'en' && (
+                                            <span style={{ fontSize: '0.7em', marginLeft: '4px', opacity: 0.7 }}>
+                                                [{t.language}]
+                                            </span>
+                                        )}
+                                    </span>
                                     <span className="transcript-msg__text">{t.text}</span>
                                     <span className="transcript-msg__time">
                                         {t.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

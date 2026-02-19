@@ -800,6 +800,24 @@ body {
   flex-shrink: 0;
 }
 
+/* Topics */
+.session-card__topics {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topic-tag {
+  background: rgba(108, 99, 255, 0.15);
+  color: #6c63ff;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(108, 99, 255, 0.2);
+}
+
 /* Q&A Feed */
 .qa-feed {
   display: flex;

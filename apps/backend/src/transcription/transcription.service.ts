@@ -13,7 +13,7 @@ export class TranscriptionService {
         this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: false });
     }
 
-    async transcribe(audioBuffer: Buffer): Promise<{ text: string; speaker: string }> {
+    async transcribe(audioBuffer: Buffer): Promise<{ text: string; speaker: string; language?: string }> {
         try {
             const form = new FormData();
             form.append('file', audioBuffer, {
@@ -30,10 +30,11 @@ export class TranscriptionService {
             );
 
             if (response.data && response.data.text) {
-                this.logger.debug(`📝 Transcription: "${response.data.text.substring(0, 30)}..." [${response.data.speaker || 'Unknown'}]`);
+                this.logger.debug(`📝 Transcription: "${response.data.text.substring(0, 30)}..." [${response.data.speaker || 'Unknown'}] (${response.data.language || '?'})`);
                 return {
                     text: response.data.text,
-                    speaker: response.data.speaker || 'Meeting'
+                    speaker: response.data.speaker || 'Meeting',
+                    language: response.data.language
                 };
             }
             return { text: '', speaker: 'Meeting' };

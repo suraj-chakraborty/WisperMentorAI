@@ -27,14 +27,15 @@ export class SessionsController {
         const session = await this.sessionService.getSession(id);
         if (!session) throw new NotFoundException('Session not found');
 
-        const { summary, actionItems } = await this.reasoningService.generateSessionSummary(id);
+        const { summary, actionItems, topics } = await this.reasoningService.generateSessionSummary(id);
 
         // Update session with AI insights
         const updated = await this.prisma.session.update({
             where: { id },
             data: {
                 summary,
-                actionItems: actionItems as any
+                actionItems: actionItems as any,
+                topics: topics
             }
         });
 
