@@ -113,7 +113,9 @@ export class MemoryService {
                 MATCH (s:Session {id: $sessionId})
                 UNWIND $concepts as c
                 MERGE (con:Concept {name: c.name})
-                SET con.definition = c.definition
+                SET con.definition = c.definition,
+                    con.name_translated = c.name_translated,
+                    con.definition_translated = c.definition_translated
                 MERGE (s)-[:MENTIONS]->(con)
                 
                 FOREACH (ex IN c.examples | 
@@ -151,10 +153,12 @@ export class MemoryService {
                 MATCH (s:Session {id: $sessionId})
                 UNWIND $qaPairs as pair
                 MERGE (q:Question {text: pair.question})
-                SET q.speaker = pair.speaker_q
+                SET q.speaker = pair.speaker_q,
+                    q.text_translated = pair.question_translated
                 
                 MERGE (a:Answer {text: pair.answer})
-                SET a.speaker = pair.speaker_a
+                SET a.speaker = pair.speaker_a,
+                    a.text_translated = pair.answer_translated
                 
                 MERGE (s)-[:INCLUDES_QA]->(q)
                 MERGE (q)-[:HAS_ANSWER]->(a)
@@ -236,11 +240,25 @@ export class MemoryService {
                 const target = record.get('target'); // Can be null if OPTIONAL MATCH fails
 
                 if (source && source.properties) {
-                    nodes.set(source.properties.name, { id: source.properties.name, label: source.properties.name, type: 'Concept' });
+                    nodes.set(source.properties.name, {
+                        id: source.properties.name,
+                        label: source.properties.name,
+                        label_translated: source.properties.name_translated,
+                        definition: source.properties.definition,
+                        definition_translated: source.properties.definition_translated,
+                        type: 'Concept'
+                    });
                 }
 
                 if (target && target.properties) {
-                    nodes.set(target.properties.name, { id: target.properties.name, label: target.properties.name, type: 'Concept' });
+                    nodes.set(target.properties.name, {
+                        id: target.properties.name,
+                        label: target.properties.name,
+                        label_translated: target.properties.name_translated,
+                        definition: target.properties.definition,
+                        definition_translated: target.properties.definition_translated,
+                        type: 'Concept'
+                    });
                     if (source) {
                         links.push({ source: source.properties.name, target: target.properties.name, label: 'RELATED_TO' });
                     }
@@ -254,6 +272,39 @@ export class MemoryService {
         } catch (error) {
             this.logger.error(`Failed to get knowledge graph: ${error}`);
             return { nodes: [], links: [] };
+        } finally {
+            await session.close();
+        }
+    }
+
+    async getGlossary(sessionId?: string): Promise<any[]> {
+        const session = this.neo4jService.getSession();
+        try {
+            let query = `
+                MATCH (c:Concept)
+                RETURN c as concept
+                LIMIT 100
+            `;
+            if (sessionId) {
+                query = `
+                    MATCH (s:Session {id: $sessionId})-[:MENTIONS]->(c:Concept)
+                    RETURN c as concept
+                `;
+            }
+
+            const result = await session.run(query, { sessionId });
+            return result.records.map(r => {
+                const props = r.get('concept').properties;
+                return {
+                    name: props.name,
+                    name_translated: props.name_translated,
+                    definition: props.definition,
+                    definition_translated: props.definition_translated
+                };
+            });
+        } catch (error) {
+            this.logger.error(`Failed to get glossary: ${error}`);
+            return [];
         } finally {
             await session.close();
         }

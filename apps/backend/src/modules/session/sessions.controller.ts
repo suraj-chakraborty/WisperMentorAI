@@ -62,4 +62,9 @@ export class SessionsController {
     async getSessionGraph(@Param('id') id: string) {
         return this.memoryService.getKnowledgeGraph(id);
     }
+
+    @Get(':id/glossary')
+    async getSessionGlossary(@Param('id') id: string) {
+        return this.memoryService.getGlossary(id);
+    }
 }

@@ -19,7 +19,7 @@ const SourcePicker: React.FC<SourcePickerProps> = ({ onSelect, onClose }) => {
     useEffect(() => {
         const fetchSources = async () => {
             try {
-                const available: Source[] = await (window as any).electronAPI.getDesktopSources();
+                const available: Source[] = await window.electronAPI.getDesktopSources();
                 setSources(available);
             } catch (e) {
                 console.error('Failed to get sources', e);

@@ -15,7 +15,7 @@ declare global {
             getDesktopSources: () => Promise<any[]>;
             startAudioCapture: () => Promise<void>;
             stopAudioCapture: () => Promise<void>;
-            onMessage: (channel: string, callback: (...args: any[]) => void) => void;
+            onMessage: (channel: string, callback: (...args: unknown[]) => void) => void;
             removeListener: (channel: string) => void;
         };
     }
