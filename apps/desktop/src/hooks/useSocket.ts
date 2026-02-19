@@ -6,6 +6,7 @@ export interface TranscriptEntry {
     speaker: string;
     text: string;
     timestamp: Date;
+    language?: string;
 }
 
 export interface AnswerEntry {
@@ -72,7 +73,7 @@ export function useSocket(): UseSocketReturn {
             }
         });
 
-        socket.on('transcript:update', (data: { id: string; speaker: string; text: string }) => {
+        socket.on('transcript:update', (data: { id: string; speaker: string; text: string; language?: string }) => {
             setTranscripts((prev) => [
                 ...prev,
                 {
@@ -80,6 +81,17 @@ export function useSocket(): UseSocketReturn {
                     timestamp: new Date(),
                 },
             ]);
+        });
+
+        socket.on('session:history', (data: { sessionId: string; transcripts: any[] }) => {
+            console.log("Received history:", data.transcripts.length);
+            setTranscripts(data.transcripts.map(t => ({
+                id: t.id,
+                speaker: t.speaker,
+                text: t.text,
+                language: t.language,
+                timestamp: new Date(t.timestamp),
+            })));
         });
 
         socket.on('answer:response', (data: { questionId: string; text: string; confidence: number }) => {

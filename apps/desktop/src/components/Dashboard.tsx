@@ -138,6 +138,16 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                                     <div className="session-card__summary">
                                         <h4>📝 Executive Summary</h4>
                                         <p>{s.summary}</p>
+
+                                        {/* Topics / Keywords */}
+                                        {s.topics && s.topics.length > 0 && (
+                                            <div className="session-card__topics">
+                                                {s.topics.map((topic: string, i: number) => (
+                                                    <span key={i} className="topic-tag">#{topic}</span>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         {s.actionItems && s.actionItems.length > 0 && (
                                             <div className="session-card__actions">
                                                 <h5>Action Items:</h5>

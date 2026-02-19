@@ -28,6 +28,9 @@ export interface ISession {
     mentorId: string;
     startedAt: Date;
     endedAt?: Date;
+    summary?: string;
+    actionItems?: string[];
+    topics?: string[];
 }
 
 // ─── Transcript ─────────────────────────────────────────────────
