@@ -107,6 +107,10 @@ function createTray(): void {
             label: 'Toggle Overlay',
             click: () => toggleOverlay(),
         },
+        {
+            label: 'Toggle Mic',
+            click: () => mainWindow?.webContents.send('mic:toggle'),
+        },
         { type: 'separator' },
         {
             label: 'Quit',

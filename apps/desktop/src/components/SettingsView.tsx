@@ -12,7 +12,8 @@ export const SettingsView: React.FC = () => {
             provider: 'ollama',
             apiKey: '',
             model: '',
-        }
+        },
+        offlineMode: false
     });
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState('');
@@ -29,7 +30,11 @@ export const SettingsView: React.FC = () => {
             if (res.ok) {
                 const data = await res.json();
                 if (data.llm) {
-                    setSettings({ ...settings, llm: { ...settings.llm, ...data.llm } });
+                    setSettings({
+                        ...settings,
+                        llm: { ...settings.llm, ...data.llm },
+                        offlineMode: data.offlineMode || false
+                    });
                 }
             }
         } catch (error) {
@@ -47,7 +52,7 @@ export const SettingsView: React.FC = () => {
                     'Content-Type': 'application/json',
                     'x-user-id': USER_ID
                 },
-                body: JSON.stringify({ llm: settings.llm })
+                body: JSON.stringify({ llm: settings.llm, offlineMode: settings.offlineMode })
             });
 
             if (res.ok) {
@@ -83,6 +88,25 @@ export const SettingsView: React.FC = () => {
                 </div>
 
                 <div className="settings__form">
+                    {/* Offline Mode Toggle */}
+                    <div className="settings__field" style={{ marginBottom: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div>
+                                <label className="settings__label" style={{ marginBottom: '4px' }}>Offline Mode</label>
+                                <p className="settings__hint" style={{ margin: 0 }}>
+                                    Force local processing only (uses Ollama). No data leaves your device.
+                                </p>
+                            </div>
+                            <label className="switch">
+                                <input
+                                    type="checkbox"
+                                    checked={settings.offlineMode || false}
+                                    onChange={(e) => setSettings({ ...settings, offlineMode: e.target.checked })}
+                                />
+                                <span className="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
                     {/* Provider Select */}
                     <div className="settings__field">
                         <label className="settings__label">Select Provider</label>

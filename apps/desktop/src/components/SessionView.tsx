@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
 import ReactMarkdown from 'react-markdown';
+import SourcePicker from './SourcePicker';
 
 interface SessionViewProps {
     sessionId: string | null;
@@ -44,6 +45,10 @@ export function SessionView({
     const transcriptEndRef = useRef<HTMLDivElement>(null);
     const qaEndRef = useRef<HTMLDivElement>(null);
     const [elapsed, setElapsed] = useState(0);
+
+    // Source Picker State (Moved up to fix hooks error)
+    const [showSourcePicker, setShowSourcePicker] = useState(false);
+    const [selectedSourceId, setSelectedSourceId] = useState<string | undefined>(undefined);
 
     // Auto-scroll transcript
     useEffect(() => {
@@ -97,19 +102,63 @@ export function SessionView({
         );
     }
 
+    // ─── Source Picker Logic ───
+
+
+    // This is passed from App.tsx as `onToggleCapture(sourceId?)`
+    // We intercept to handle source selection flow?
+    // Actually, SessionView receives `onToggleCapture`.
+    // We can't change the prop signature easily without changing App.tsx passing it.
+    // But in App.tsx we updated it to accept `sourceId`.
+    // So here we can call `onToggleCapture(sourceId)`.
+
+    const handleSourceSelect = (id: string) => {
+        setSelectedSourceId(id);
+        setShowSourcePicker(false);
+        // Start capture with this ID
+        // We need to cast because props interface might be loose or we updated it?
+        // Let's assume onToggleCapture accepts it.
+        (onToggleCapture as any)(id);
+    };
+
     return (
         <div className="session">
+            {showSourcePicker && (
+                <SourcePicker
+                    onSelect={handleSourceSelect}
+                    onClose={() => setShowSourcePicker(false)}
+                />
+            )}
+
             {/* Session Header */}
             <div className="session__header">
                 <div className="session__info">
-                    <button
-                        className={`session__rec-btn ${isCapturing ? 'session__rec-btn--active' : ''}`}
-                        onClick={onToggleCapture}
-                        title={isCapturing ? 'Stop Recording' : 'Start Recording'}
-                    >
-                        <span className="session__rec-dot" />
-                        {isCapturing ? 'Recording' : 'Start Rec'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            className={`session__rec-btn ${isCapturing ? 'session__rec-btn--active' : ''}`}
+                            onClick={() => (onToggleCapture as any)()} // Toggle default
+                            title={isCapturing ? 'Stop Recording' : 'Start Recording'}
+                        >
+                            <span className="session__rec-dot" />
+                            {isCapturing ? 'Recording' : 'Start Rec'}
+                        </button>
+
+                        {!isCapturing && (
+                            <button
+                                className="btn btn--secondary btn--icon-only"
+                                onClick={() => setShowSourcePicker(true)}
+                                title="Select Audio Source (Screen/Window)"
+                                style={{ padding: '8px', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                                </svg>
+                            </button>
+                        )}
+                    </div>
+
                     {isCapturing && (
                         <button
                             onClick={toggleMic}
@@ -198,7 +247,7 @@ export function SessionView({
                                         : 'Click "Start Rec" to begin capturing audio.'}
                                 </p>
                                 <p className="transcript-feed__hint">
-                                    System audio will be transcribed here in real-time.
+                                    System audio from <strong>{selectedSourceId ? 'Selected Window' : 'Entire Screen'}</strong> will be transcribed.
                                 </p>
                             </div>
                         ) : (
