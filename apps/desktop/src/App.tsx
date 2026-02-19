@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSocket } from './hooks/useSocket';
-import { useAudioCapture } from './hooks/useAudioCapture';
-import { useAuth } from './context/AuthContext';
-import { TitleBar } from './components/TitleBar';
-import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './components/Dashboard';
-import { SessionView } from './components/SessionView';
-import { OverlayView } from './components/OverlayView';
-import { StatusBar } from './components/StatusBar';
-import { SettingsView } from './components/SettingsView';
-import { LoginPage } from './components/LoginPage';
-import { SignupPage } from './components/SignupPage';
+import { useSocket } from '@/hooks/useSocket';
+import { useAudioCapture } from '@/hooks/useAudioCapture';
+import { useAuth } from '@/context/AuthContext';
+import { TitleBar } from '@/components/TitleBar';
+import { Sidebar } from '@/components/Sidebar';
+import { Dashboard } from '@/components/Dashboard';
+import { SessionView } from '@/components/SessionView';
+import { OverlayView } from '@/components/OverlayView';
+import { StatusBar } from '@/components/StatusBar';
+import { SettingsView } from '@/components/SettingsView';
+import { GlossaryView } from '@/components/GlossaryView';
+import { KnowledgeGraphView } from '@/components/KnowledgeGraphView';
+import { LoginPage } from '@/components/LoginPage';
+import { SignupPage } from '@/components/SignupPage';
 
 function AuthenticatedApp({ token }: { token: string }) {
     const [activePage, setActivePage] = useState('dashboard');
@@ -182,6 +184,12 @@ function AuthenticatedApp({ token }: { token: string }) {
                     )}
                     {activePage === 'settings' && (
                         <SettingsView />
+                    )}
+                    {activePage === 'glossary' && (
+                        <GlossaryView sessionId={sessionId} />
+                    )}
+                    {activePage === 'graph' && (
+                        <KnowledgeGraphView sessionId={sessionId} />
                     )}
                 </main>
             </div>

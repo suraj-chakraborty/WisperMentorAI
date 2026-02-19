@@ -4,21 +4,6 @@ interface TitleBarProps {
     isOverlay: boolean;
 }
 
-declare global {
-    interface Window {
-        electronAPI?: {
-            minimizeWindow: () => void;
-            maximizeWindow: () => void;
-            closeWindow: () => void;
-            toggleOverlay: () => Promise<boolean>;
-            getVersion: () => Promise<string>;
-            getOverlayStatus: () => Promise<boolean>;
-            onOverlayToggled: (callback: (isOverlay: boolean) => void) => void;
-            onMessage: (channel: string, callback: (...args: unknown[]) => void) => void;
-            removeListener: (channel: string) => void;
-        };
-    }
-}
 
 export function TitleBar({ isOverlay }: TitleBarProps) {
     if (isOverlay) return null;

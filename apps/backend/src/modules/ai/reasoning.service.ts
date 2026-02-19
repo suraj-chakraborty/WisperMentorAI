@@ -155,12 +155,29 @@ If there are no action items or decisions, return empty arrays.`
             // Cleanup potential markdown
             const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const result = JSON.parse(cleanJson);
-            return {
+            const summaryData = {
                 summary: result.summary || "Summary generation failed.",
                 actionItems: result.actionItems || [],
                 keyDecisions: result.keyDecisions || [],
                 topics: result.topics || []
             };
+
+            // Translation support
+            const targetLang = settings.lingo?.preferredLanguage || 'en';
+            if (targetLang !== 'en') {
+                this.logger.log(`Translating summary to ${targetLang}`);
+                summaryData.summary = await this.translationService.translate(summaryData.summary, targetLang);
+
+                // Translate arrays
+                summaryData.actionItems = await Promise.all(
+                    (summaryData.actionItems || []).map((item: string) => this.translationService.translate(item, targetLang))
+                );
+                summaryData.keyDecisions = await Promise.all(
+                    (summaryData.keyDecisions || []).map((item: string) => this.translationService.translate(item, targetLang))
+                );
+            }
+
+            return summaryData;
         } catch (e) {
             this.logger.error(`Failed to parse summary JSON: ${e}`);
             return {
@@ -225,7 +242,21 @@ Return ONLY valid JSON. No markdown.`
 
         try {
             const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(cleanJson);
+            const concepts = JSON.parse(cleanJson);
+            const targetLang = settings.lingo?.preferredLanguage || 'en';
+
+            if (targetLang !== 'en') {
+                this.logger.log(`Translating ${concepts.length} concepts to ${targetLang}`);
+                for (const c of concepts) {
+                    try {
+                        c.name_translated = await this.translationService.translate(c.name, targetLang);
+                        c.definition_translated = await this.translationService.translate(c.definition, targetLang);
+                    } catch (e) {
+                        this.logger.warn(`Failed to translate concept ${c.name}: ${e}`);
+                    }
+                }
+            }
+            return concepts;
         } catch (e) {
             this.logger.error(`Failed to parse concepts JSON: ${e}`);
             return [];
@@ -283,7 +314,21 @@ Return ONLY valid JSON. No markdown.`
 
         try {
             const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(cleanJson);
+            const qaPairs = JSON.parse(cleanJson);
+            const targetLang = settings.lingo?.preferredLanguage || 'en';
+
+            if (targetLang !== 'en') {
+                this.logger.log(`Translating ${qaPairs.length} QA pairs to ${targetLang}`);
+                for (const pair of qaPairs) {
+                    try {
+                        if (pair.question) pair.question_translated = await this.translationService.translate(pair.question, targetLang);
+                        if (pair.answer) pair.answer_translated = await this.translationService.translate(pair.answer, targetLang);
+                    } catch (e) {
+                        this.logger.warn(`Failed to translate QA pair: ${e}`);
+                    }
+                }
+            }
+            return qaPairs;
         } catch (e) {
             this.logger.error(`Failed to parse QA JSON: ${e}`);
             return [];

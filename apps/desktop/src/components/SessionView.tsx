@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
 import ReactMarkdown from 'react-markdown';
 import SourcePicker from './SourcePicker';
+import { Modal } from './Modal';
+import { GlossaryView } from './GlossaryView';
+import { KnowledgeGraphView } from './KnowledgeGraphView';
 import { generateMarkdown, generateText, downloadFile } from '../utils/exportUtils';
 
 interface SessionViewProps {
@@ -54,6 +57,8 @@ export function SessionView({
     // Source Picker State (Moved up to fix hooks error)
     // Source Picker State
     const [showSourcePicker, setShowSourcePicker] = useState(false);
+    const [showGlossary, setShowGlossary] = useState(false);
+    const [showGraph, setShowGraph] = useState(false);
     const [selectedSourceId, setSelectedSourceId] = useState<string | undefined>(undefined);
     const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -344,6 +349,21 @@ export function SessionView({
                     >
                         Q&A ({answers.length})
                     </button>
+                    <div style={{ width: '1px', background: '#334155', margin: '8px 4px' }} />
+                    <button
+                        className="session__tab"
+                        onClick={() => setShowGlossary(true)}
+                        title="View session glossary"
+                    >
+                        📚 Glossary
+                    </button>
+                    <button
+                        className="session__tab"
+                        onClick={() => setShowGraph(true)}
+                        title="View knowledge graph"
+                    >
+                        🕸️ Graph
+                    </button>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <button
@@ -491,6 +511,25 @@ export function SessionView({
                     Send
                 </button>
             </form>
+
+            {/* Modals */}
+            <Modal
+                isOpen={showGlossary}
+                onClose={() => setShowGlossary(false)}
+                title="📚 Session Glossary"
+                size="large"
+            >
+                <GlossaryView sessionId={sessionId} />
+            </Modal>
+
+            <Modal
+                isOpen={showGraph}
+                onClose={() => setShowGraph(false)}
+                title="🕸️ Knowledge Graph"
+                size="large"
+            >
+                <KnowledgeGraphView sessionId={sessionId} />
+            </Modal>
         </div>
     );
 }
