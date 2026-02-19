@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './hooks/useSocket';
 import { useAudioCapture } from './hooks/useAudioCapture';
+import { useAuth } from './context/AuthContext';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -8,11 +9,14 @@ import { SessionView } from './components/SessionView';
 import { OverlayView } from './components/OverlayView';
 import { StatusBar } from './components/StatusBar';
 import { SettingsView } from './components/SettingsView';
+import { LoginPage } from './components/LoginPage';
+import { SignupPage } from './components/SignupPage';
 
-function App() {
+function AuthenticatedApp({ token }: { token: string }) {
     const [activePage, setActivePage] = useState('dashboard');
     const [isOverlay, setIsOverlay] = useState(false);
     const [elapsed, setElapsed] = useState(0);
+    const [isTranslationEnabled, setIsTranslationEnabled] = useState(false);
 
     const {
         isConnected,
@@ -25,7 +29,8 @@ function App() {
         sendQuestion,
         sendAudioChunk,
         startNewSession,
-    } = useSocket();
+        toggleTranslation,
+    } = useSocket(token);
 
     const {
         isCapturing,
@@ -44,7 +49,15 @@ function App() {
         window.electronAPI?.onOverlayToggled((overlayState: boolean) => {
             setIsOverlay(overlayState);
         });
-    }, []);
+
+        // Listen for mic toggle
+        const handleMicToggle = () => toggleMic();
+        window.electronAPI?.onToggleMic(handleMicToggle);
+
+        return () => {
+            window.electronAPI?.removeListener('mic:toggle');
+        };
+    }, [toggleMic]);
 
     // Session timer
     useEffect(() => {
@@ -60,6 +73,8 @@ function App() {
     }, [sessionId]);
 
     const handleToggleOverlay = useCallback(async () => {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
         const result = await window.electronAPI?.toggleOverlay();
         if (typeof result === 'boolean') {
             setIsOverlay(result);
@@ -75,6 +90,11 @@ function App() {
             });
         }
     }, [isCapturing, startCapture, stopCapture]);
+
+    const handleToggleTranslation = useCallback((enabled: boolean) => {
+        setIsTranslationEnabled(enabled);
+        toggleTranslation(enabled);
+    }, [toggleTranslation]);
 
     const handleNavigate = useCallback((page: string) => {
         setActivePage(page);
@@ -136,6 +156,8 @@ function App() {
                             isMicEnabled={isMicEnabled}
                             toggleMic={toggleMic}
                             onToggleOverlay={handleToggleOverlay}
+                            onToggleTranslation={handleToggleTranslation}
+                            isTranslationEnabled={isTranslationEnabled}
                         />
                     )}
                     {activePage === 'settings' && (
@@ -153,6 +175,22 @@ function App() {
             />
         </div>
     );
+}
+
+function App() {
+    const { user, token, loading } = useAuth();
+    const [isSignup, setIsSignup] = useState(false);
+
+    // Auth Guard
+    if (loading) return <div className="app-loading">Loading WisperMentor...</div>;
+
+    if (!user || !token) {
+        return isSignup
+            ? <SignupPage onSwitchToLogin={() => setIsSignup(false)} />
+            : <LoginPage onSwitchToSignup={() => setIsSignup(true)} />;
+    }
+
+    return <AuthenticatedApp token={token} />;
 }
 
 export default App;

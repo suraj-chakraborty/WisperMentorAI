@@ -169,7 +169,12 @@ app.whenReady().then(() => {
     createTray();
 
     // Global hotkey: Ctrl+Shift+M to toggle overlay
+    // Global hotkeys
     globalShortcut.register('CommandOrControl+Shift+M', () => {
+        mainWindow?.webContents.send('mic:toggle');
+    });
+
+    globalShortcut.register('CommandOrControl+Shift+O', () => {
         if (mainWindow) {
             if (!mainWindow.isVisible()) {
                 mainWindow.show();

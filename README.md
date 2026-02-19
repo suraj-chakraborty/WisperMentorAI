@@ -27,9 +27,14 @@ We are using a monorepo setup for tight integration between the desktop client a
 ```text
 whispermentor-ai/
 ├── apps/
+|   |
+|   |__ ai-service/        # Python backend (AI + ASR + Memory)
+|   |   └── src/           # Modules: Auth, Session, Memory, AI, Transcript
+|   |
 │   ├── desktop/           # Electron shell + React/Vite renderer
 │   │   ├── electron/      # Main process & IPC bridge
 │   │   └── src/           # UI components & state management
+│   |
 │   └── backend/           # NestJS server (API + Real-time Gateway)
 │       └── src/           # Modules: Auth, Session, Memory, AI, Transcript
 ├── packages/
@@ -74,11 +79,12 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 | 3 | Real-Time ASR Integration | **Complete** |
 | 4 | Semantic Knowledge Base (Neo4j + Vector) | **Complete** |
 | 5 | AI Reasoning Engine & Private Q&A | **Complete** |
+| 6 | User Auth & Audio Enhancements | **Complete** |
 
 ### progress till now
 - **Custom frameless window** with branded TitleBar (drag, minimize, maximize, close)
 - **System tray** integration — minimize-to-tray, context menu (Show / Toggle Overlay / Quit)
-- **Overlay mode** — `Ctrl+Shift+M` toggles a compact always-on-top floating panel
+- **Overlay mode** — `Ctrl+Shift+O` toggles a compact always-on-top floating panel
 - **Sidebar navigation** — Dashboard, Session, and Settings with live connection status
 - **Dashboard** — Welcome card, stats grid, system status panel, quick session actions
 - **Session view** — Live transcript feed + private Q&A chat with typing indicators
@@ -99,6 +105,10 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 - **Second Brain (RAG)** — Real-time ingestion of transcripts into deeper semantic memory (Neo4j + Vector Embeddings).
 - **Live Q&A** — Ask questions during the meeting; the AI answers using context from the current discussion.
 - **Settings Panel** — Configure your AI Provider (**Ollama**, **Gemini**, **OpenAI**, **Anthropic**) and manage API keys securely.
+- **Microphone Control** — Global hotkey support (`Ctrl+Shift+M`) to mute/unmute mic from anywhere.
+- **Enhanced Audio** — Integrated **Noise Suppression**, **Echo Cancellation**, and **High-Pass Filtering** for crystal clear voice capture.
+- **User Authentication** — Secure JWT-based Login/Signup system with encrypted password storage.
+- **Session History** — View past sessions, auto-load context when re-joining, and seamless history backfill.
 
 ---
 
@@ -106,7 +116,8 @@ We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop Ap
 ### Keyboard Shortcuts
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+M` | Toggle overlay mode |
+| `Ctrl+Shift+O` | Toggle Overlay Mode (Global) |
+| `Ctrl+Shift+M` | Toggle Microphone Mute/Unmute (Global) |
 
 ## License
 Distributed under the MIT License.

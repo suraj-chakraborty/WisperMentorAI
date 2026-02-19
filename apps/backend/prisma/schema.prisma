@@ -23,6 +23,7 @@ enum Role {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  password  String   // Hashed password
   name      String?
   role      Role     @default(USER)
   settings  Json     @default("{}")

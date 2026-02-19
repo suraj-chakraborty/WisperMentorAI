@@ -211,10 +211,36 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             // Enable Mic
             try {
                 if (!micStreamRef.current) {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                        }
+                    });
                     micStreamRef.current = stream;
-                    const source = audioContextRef.current.createMediaStreamSource(stream);
-                    source.connect(micGainRef.current);
+                    const ctx = audioContextRef.current;
+                    const source = ctx.createMediaStreamSource(stream);
+
+                    // 🎙️ Noise Suppression Chain
+                    // 1. High-pass filter (Cut rumble < 85Hz)
+                    const highPass = ctx.createBiquadFilter();
+                    highPass.type = 'highpass';
+                    highPass.frequency.value = 85;
+
+                    // 2. Dynamics Compressor (Even out volume / reduce peaks)
+                    const compressor = ctx.createDynamicsCompressor();
+                    compressor.threshold.value = -20;
+                    compressor.knee.value = 30;
+                    compressor.ratio.value = 12;
+                    compressor.attack.value = 0.003;
+                    compressor.release.value = 0.25;
+
+                    // Chain: Source -> HighPass -> Compressor -> Gain -> Merger
+                    source.connect(highPass);
+                    highPass.connect(compressor);
+                    compressor.connect(micGainRef.current);
+
                     micGainRef.current.gain.value = 1.0;
                 } else {
                     micGainRef.current.gain.value = 1.0;
@@ -225,6 +251,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             }
         } else {
             micGainRef.current.gain.value = 0;
+            // Optionally stop tracks to release hardware, but keeping it open for quick toggle is better
         }
     }, [isMicEnabled]);
 

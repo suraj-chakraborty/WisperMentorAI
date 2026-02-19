@@ -63,6 +63,7 @@ export class SettingsService {
                     id: userId,
                     email: `${userId}@example.com`,
                     name: 'Demo User',
+                    password: 'demo_password_hash_placeholder',
                     settings: newSettings,
                 },
                 select: { settings: true },

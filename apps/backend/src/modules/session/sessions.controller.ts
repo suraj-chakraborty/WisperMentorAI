@@ -35,7 +35,6 @@ export class SessionsController {
             data: {
                 summary,
                 actionItems: actionItems as any,
-                topics: topics
             }
         });
 

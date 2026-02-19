@@ -13,6 +13,9 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   onOverlayToggled: (callback) => {
     electron.ipcRenderer.on("overlay:toggled", (_event, isOverlay) => callback(isOverlay));
   },
+  onToggleMic: (callback) => {
+    electron.ipcRenderer.on("mic:toggle", () => callback());
+  },
   // Audio capture
   getDesktopSources: () => electron.ipcRenderer.invoke("audio:get-sources"),
   startAudioCapture: () => electron.ipcRenderer.invoke("audio:start"),
