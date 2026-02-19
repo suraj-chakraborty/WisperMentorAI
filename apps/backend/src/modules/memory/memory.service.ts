@@ -103,6 +103,89 @@ export class MemoryService {
         }
     }
 
+    async saveConcepts(sessionId: string, concepts: any[]) {
+        if (!concepts || !concepts.length) return;
+
+        const session = this.neo4jService.getSession();
+        try {
+            await session.run(
+                `
+                MATCH (s:Session {id: $sessionId})
+                UNWIND $concepts as c
+                MERGE (con:Concept {name: c.name})
+                SET con.definition = c.definition
+                MERGE (s)-[:MENTIONS]->(con)
+                
+                FOREACH (ex IN c.examples | 
+                    MERGE (e:Example {text: ex}) 
+                    MERGE (con)-[:HAS_EXAMPLE]->(e)
+                )
+                
+                FOREACH (rule IN c.rules | 
+                    MERGE (r:Rule {text: rule}) 
+                    MERGE (con)-[:HAS_RULE]->(r)
+                )
+                `,
+                { sessionId, concepts }
+            );
+            this.logger.log(`Saved ${concepts.length} concepts for session ${sessionId}`);
+        } catch (error) {
+            this.logger.error(`Failed to save concepts: ${error}`);
+        } finally {
+            await session.close();
+        }
+    }
+
+    async saveQA(sessionId: string, qaPairs: any[]) {
+        if (!qaPairs || !qaPairs.length) return;
+
+        const session = this.neo4jService.getSession();
+        try {
+            await session.run(
+                `
+                MATCH (s:Session {id: $sessionId})
+                UNWIND $qaPairs as pair
+                MERGE (q:Question {text: pair.question})
+                SET q.speaker = pair.speaker_q
+                
+                MERGE (a:Answer {text: pair.answer})
+                SET a.speaker = pair.speaker_a
+                
+                MERGE (s)-[:INCLUDES_QA]->(q)
+                MERGE (q)-[:HAS_ANSWER]->(a)
+                `,
+                { sessionId, qaPairs }
+            );
+            this.logger.log(`Saved ${qaPairs.length} Q&A pairs for session ${sessionId}`);
+        } catch (error) {
+            this.logger.error(`Failed to save Q&A pairs: ${error}`);
+        } finally {
+            await session.close();
+        }
+    }
+
+    async getStyleExamples(sessionId: string, limit: number = 3): Promise<string[]> {
+        const session = this.neo4jService.getSession();
+        try {
+            const result = await session.run(
+                `
+                MATCH (s:Session {id: $sessionId})-[:HAS_TRANSCRIPT]->(t:Transcript)
+                WHERE t.speaker = 'You' OR t.speaker = 'User'
+                RETURN t.text as text
+                ORDER BY t.timestamp DESC
+                LIMIT $limit
+                `,
+                { sessionId, limit: int(limit) }
+            );
+            return result.records.map(r => r.get('text'));
+        } catch (error) {
+            this.logger.error(`Failed to get style examples: ${error}`);
+            return [];
+        } finally {
+            await session.close();
+        }
+    }
+
     private async getEmbedding(text: string): Promise<number[]> {
         try {
             const { data } = await firstValueFrom(

@@ -4,7 +4,7 @@ export interface AudioCaptureState {
     isCapturing: boolean;
     audioLevel: number;
     error: string | null;
-    startCapture: () => Promise<void>;
+    startCapture: (sourceId?: string) => Promise<void>;
     stopCapture: () => void;
     isMicEnabled: boolean;
     toggleMic: () => void;
@@ -43,24 +43,29 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
         animFrameRef.current = requestAnimationFrame(monitorLevel);
     }, []);
 
-    const startCapture = useCallback(async () => {
+    const startCapture = useCallback(async (sourceId?: string) => {
         try {
             setError(null);
 
-            const sources = await (window as any).electronAPI.getDesktopSources();
-            const desktopSource = sources.find((s: any) => s.name === 'Entire Screen') || sources[0];
+            let chromeMediaSourceId = sourceId;
+
+            if (!chromeMediaSourceId) {
+                const sources = await (window as any).electronAPI.getDesktopSources();
+                const desktopSource = sources.find((s: any) => s.name === 'Entire Screen') || sources[0];
+                chromeMediaSourceId = desktopSource.id;
+            }
 
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: desktopSource.id,
+                        chromeMediaSourceId: chromeMediaSourceId,
                     },
                 } as any,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: desktopSource.id,
+                        chromeMediaSourceId: chromeMediaSourceId,
                         maxWidth: 1,
                         maxHeight: 1,
                         maxFrameRate: 1,

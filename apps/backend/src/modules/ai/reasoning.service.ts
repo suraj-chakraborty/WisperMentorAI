@@ -25,12 +25,18 @@ export class ReasoningService {
             .map((doc: any) => `- ${doc.text}`)
             .join('\n');
 
-        this.logger.debug(`Retrieved ${contextDocs.length} relevant memories.`);
+        // 2. Get Tone/Style Examples
+        const styleExamples = await this.memoryService.getStyleExamples(sessionId, 3);
+        const stylePrompt = styleExamples.length
+            ? `\n\nAdopt the speaking style of the following examples:\n${styleExamples.map(e => `"${e}"`).join('\n')}`
+            : '';
+
+        this.logger.debug(`Retrieved ${contextDocs.length} memories and ${styleExamples.length} style examples.`);
 
         const messages: ChatMessage[] = [
             {
                 role: 'system',
-                content: `You are WhisperMentor. Answer the question based on the context.`
+                content: `You are WhisperMentor. Answer the question based on the context.${stylePrompt}`
             },
             {
                 role: 'user',
@@ -41,9 +47,10 @@ export class ReasoningService {
         // Fetch Settings
         const settings = await this.settingsService.getRawSettings('demo-user');
         const llmConfig = settings.llm || {};
+        const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
 
         return this.llmService.generateResponse(messages, {
-            provider: llmConfig.provider || 'ollama',
+            provider,
             apiKey: llmConfig.apiKey,
             model: llmConfig.model
         });
@@ -89,9 +96,10 @@ If there are no action items or decisions, return empty arrays.`
         // 3. Call LLM
         const settings = await this.settingsService.getRawSettings('demo-user');
         const llmConfig = settings.llm || {};
+        const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
 
         const responseText = await this.llmService.generateResponse(messages, {
-            provider: llmConfig.provider || 'ollama',
+            provider,
             apiKey: llmConfig.apiKey,
             model: llmConfig.model
         });
@@ -115,6 +123,122 @@ If there are no action items or decisions, return empty arrays.`
                 keyDecisions: [],
                 topics: []
             };
+        }
+    }
+
+    async extractConcepts(sessionId: string): Promise<any[]> {
+        this.logger.log(`Extracting concepts for session: ${sessionId}`);
+
+        const transcripts = await this.transcriptService.getTranscripts(sessionId);
+        if (!transcripts.length) return [];
+
+        const fullText = transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n');
+
+        const messages: ChatMessage[] = [
+            {
+                role: 'system',
+                content: `You are a Knowledge Graph extraction expert.
+Analyze the transcript and extract key technical concepts.
+Values should be specific and technical (e.g., "Dependency Injection", "React Hooks", "OAuth2").
+
+Output a JSON ARRAY of objects, where each object has:
+- "name": String (Concept Name)
+- "definition": String (Concise definition)
+- "examples": String[] (List of examples mentioned or implied)
+- "rules": String[] (Best practices, constraints, or rules mentioned)
+
+Example:
+[
+  {
+    "name": "Validation Pipe",
+    "definition": "A NestJS class to validate incoming request data.",
+    "examples": ["UserDto validation"],
+    "rules": ["Always use with class-validator"]
+  }
+]
+
+Return ONLY valid JSON. No markdown.`
+            },
+            {
+                role: 'user',
+                content: `Transcript:\n${fullText}`
+            }
+        ];
+
+        const settings = await this.settingsService.getRawSettings('demo-user');
+        const llmConfig = settings.llm || {};
+        const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
+
+        const responseText = await this.llmService.generateResponse(messages, {
+            provider,
+            apiKey: llmConfig.apiKey,
+            model: llmConfig.model
+        });
+
+        try {
+            const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(cleanJson);
+        } catch (e) {
+            this.logger.error(`Failed to parse concepts JSON: ${e}`);
+            return [];
+        }
+    }
+
+    async extractQA(sessionId: string): Promise<any[]> {
+        this.logger.log(`Extracting Q&A for session: ${sessionId}`);
+
+        const transcripts = await this.transcriptService.getTranscripts(sessionId);
+        if (!transcripts.length) return [];
+
+        const fullText = transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n');
+
+        const messages: ChatMessage[] = [
+            {
+                role: 'system',
+                content: `You are an expert at analyzing meeting transcripts.
+Identify every specific Question asked and its corresponding Answer.
+Ignore rhetorical questions or questions without clear answers.
+
+Output a JSON ARRAY of objects, where each object has:
+- "question": String (The question text)
+- "answer": String (The summary of the answer given)
+- "speaker_q": String (Who asked, usually "User" or "Meeting")
+- "speaker_a": String (Who answered, usually "Meeting" or "User")
+
+Example:
+[
+  {
+    "question": "How do I use a ValidationPipe?",
+    "answer": "You can add it globally in main.ts or per-controller.",
+    "speaker_q": "User",
+    "speaker_a": "Meeting"
+  }
+]
+
+Return ONLY valid JSON. No markdown.`
+            },
+            {
+                role: 'user',
+                content: `Transcript:\n${fullText}`
+            }
+        ];
+
+        const settings = await this.settingsService.getRawSettings('demo-user');
+        const llmConfig = settings.llm || {};
+        const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
+
+        const responseText = await this.llmService.generateResponse(messages, {
+            provider,
+            apiKey: llmConfig.apiKey,
+            model: llmConfig.model
+        });
+
+        try {
+            const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(cleanJson);
+        } catch (e) {
+            this.logger.error(`Failed to parse QA JSON: ${e}`);
+            return [];
         }
     }
 }

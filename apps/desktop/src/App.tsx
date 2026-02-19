@@ -81,11 +81,11 @@ function AuthenticatedApp({ token }: { token: string }) {
         }
     }, []);
 
-    const handleToggleCapture = useCallback(() => {
+    const handleToggleCapture = useCallback((sourceId?: string) => {
         if (isCapturing) {
             stopCapture();
         } else {
-            startCapture().catch((err: unknown) => {
+            startCapture(sourceId).catch((err: unknown) => {
                 console.error('Failed to start capture:', err);
             });
         }
