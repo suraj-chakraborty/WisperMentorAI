@@ -180,6 +180,7 @@ function AuthenticatedApp({ token }: { token: string }) {
                             isTranslationEnabled={isTranslationEnabled}
                             isPaused={isPaused}
                             togglePause={togglePause}
+                            token={token}
                         />
                     )}
                     {activePage === 'settings' && (
