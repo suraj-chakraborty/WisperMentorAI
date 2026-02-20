@@ -7,7 +7,6 @@ export class TranscriptService {
 
     constructor(private readonly prisma: PrismaService) { }
 
-    // TODO: Phase 3 — Implement real-time transcription ingestion
     async addTranscript(sessionId: string, speaker: string, text: string, language?: string) {
         this.logger.log(`📝 Transcript [${speaker}]: ${text.substring(0, 50)}...`);
         return this.prisma.transcript.create({

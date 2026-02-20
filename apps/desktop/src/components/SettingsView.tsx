@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import './SettingsView.css';
 
+import { useAuth } from '../context/AuthContext';
+
 // API base url
 const API_URL = 'http://127.0.0.1:3001';
-const USER_ID = 'demo-user'; // Hackathon mode
 
 export const SettingsView: React.FC = () => {
     const [settings, setSettings] = useState<any>({
@@ -21,6 +22,7 @@ export const SettingsView: React.FC = () => {
     });
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState('');
+    const { token } = useAuth();
 
     useEffect(() => {
         fetchSettings();
@@ -29,7 +31,7 @@ export const SettingsView: React.FC = () => {
     const fetchSettings = async () => {
         try {
             const res = await fetch(`${API_URL}/settings`, {
-                headers: { 'x-user-id': USER_ID }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
@@ -56,7 +58,7 @@ export const SettingsView: React.FC = () => {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-user-id': USER_ID
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     llm: settings.llm,

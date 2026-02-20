@@ -26,6 +26,7 @@ interface SessionViewProps {
     isTranslationEnabled: boolean;
     isPaused: boolean;
     togglePause: () => void;
+    token: string;
 }
 
 export function SessionView({
@@ -47,6 +48,7 @@ export function SessionView({
     isTranslationEnabled,
     isPaused,
     togglePause,
+    token,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -123,7 +125,7 @@ export function SessionView({
         const loadSettings = async () => {
             try {
                 const res = await fetch('http://127.0.0.1:3001/settings', {
-                    headers: { 'x-user-id': 'demo-user' }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.ok) {
                     const data = await res.json();
@@ -136,7 +138,7 @@ export function SessionView({
             }
         };
         loadSettings();
-    }, []);
+    }, [token]);
 
     const formatTime = (s: number) => {
         const m = Math.floor(s / 60);

@@ -194,12 +194,17 @@ export function useSocket(token: string): UseSocketReturn {
 
     const startNewSession = useCallback(async () => {
         try {
-            const res = await fetch('http://127.0.0.1:3001/sessions', { method: 'POST' });
+            const res = await fetch('http://127.0.0.1:3001/sessions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             if (res.ok) {
                 const data = await res.json();
                 joinSession(data.id);
             } else {
-                console.error("Failed to create session");
+                console.error("Failed to create session:", await res.text());
             }
         } catch (e) {
             console.error("Error creating session", e);
@@ -207,7 +212,7 @@ export function useSocket(token: string): UseSocketReturn {
             const newId = `session_${Date.now()}`;
             joinSession(newId);
         }
-    }, [joinSession]);
+    }, [joinSession, token]);
 
     const sendAudioChunk = useCallback(
         (chunk: ArrayBuffer) => {
