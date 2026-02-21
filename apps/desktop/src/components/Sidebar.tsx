@@ -9,32 +9,47 @@ interface SidebarProps {
     isOverlay: boolean;
 }
 
-const navItems = [
-    { id: 'dashboard', icon: '⌂', label: 'Dashboard' },
-    { id: 'session', icon: '◉', label: 'Session' },
-    { id: 'glossary', icon: '📚', label: 'Glossary' },
-    { id: 'graph', icon: '🕸️', label: 'Knowledge Graph' },
-    { id: 'settings', icon: '⚙', label: 'Settings' },
-];
-
 export function Sidebar({ activePage, onNavigate, isConnected, sessionId, isOverlay }: SidebarProps) {
     const { logout } = useAuth();
-    if (isOverlay) return null;
 
     return (
         <aside className="sidebar">
             <div className="sidebar__nav">
-                {navItems.map((item) => (
-                    <button
-                        key={item.id}
-                        className={`sidebar__item ${activePage === item.id ? 'sidebar__item--active' : ''}`}
-                        onClick={() => onNavigate(item.id)}
-                        title={item.label}
-                    >
-                        <span className="sidebar__icon">{item.icon}</span>
-                        <span className="sidebar__label">{item.label}</span>
-                    </button>
-                ))}
+                <button
+                    className={`sidebar__item ${activePage === 'dashboard' ? 'sidebar__item--active' : ''}`}
+                    onClick={() => onNavigate('dashboard')}
+                >
+                    <span className="sidebar__icon">⌂</span>
+                    <span className="sidebar__label">Dashboard</span>
+                </button>
+                <button
+                    className={`sidebar__item ${activePage === 'session' ? 'sidebar__item--active' : ''}`}
+                    onClick={() => onNavigate('session')}
+                >
+                    <span className="sidebar__icon">◉</span>
+                    <span className="sidebar__label">Active Session</span>
+                </button>
+                <button
+                    className={`sidebar__item ${activePage === 'glossary' ? 'sidebar__item--active' : ''}`}
+                    onClick={() => onNavigate('glossary')}
+                >
+                    <span className="sidebar__icon">📚</span>
+                    <span className="sidebar__label">Glossary</span>
+                </button>
+                <button
+                    className={`sidebar__item ${activePage === 'graph' ? 'sidebar__item--active' : ''}`}
+                    onClick={() => onNavigate('graph')}
+                >
+                    <span className="sidebar__icon">🕸️</span>
+                    <span className="sidebar__label">Knowledge Graph</span>
+                </button>
+                <button
+                    className={`sidebar__item ${activePage === 'settings' ? 'sidebar__item--active' : ''}`}
+                    onClick={() => onNavigate('settings')}
+                >
+                    <span className="sidebar__icon">⚙</span>
+                    <span className="sidebar__label">Settings</span>
+                </button>
             </div>
 
             <div className="sidebar__user-controls">
@@ -43,7 +58,6 @@ export function Sidebar({ activePage, onNavigate, isConnected, sessionId, isOver
                     <span className="sidebar__label">Logout</span>
                 </button>
             </div>
-
 
             <div className="sidebar__footer">
                 <div className={`sidebar__status ${isConnected ? 'sidebar__status--online' : 'sidebar__status--offline'}`}>
@@ -58,6 +72,6 @@ export function Sidebar({ activePage, onNavigate, isConnected, sessionId, isOver
                     </div>
                 )}
             </div>
-        </aside >
+        </aside>
     );
 }

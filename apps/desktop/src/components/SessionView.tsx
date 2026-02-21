@@ -5,6 +5,8 @@ import SourcePicker from './SourcePicker';
 import { Modal } from './Modal';
 import { GlossaryView } from './GlossaryView';
 import { KnowledgeGraphView } from './KnowledgeGraphView';
+import { usePushToTalk } from '../hooks/usePushToTalk';
+import { ttsService } from '../utils/TextToSpeechService';
 import { generateMarkdown, generateText, downloadFile } from '../utils/exportUtils';
 
 interface SessionViewProps {
@@ -65,7 +67,7 @@ export function SessionView({
     const [showExportMenu, setShowExportMenu] = useState(false);
 
     // Translation State
-    const [translations, setTranslations] = useState<Record<number, string>>({});
+    const [translationData, setTranslationData] = useState<Record<number, { text: string; warning?: string }>>({});
     const [targetLang, setTargetLang] = useState('es');
     const translatingRef = useRef<Set<number>>(new Set());
 
@@ -90,14 +92,23 @@ export function SessionView({
 
     // Translation Effect
     useEffect(() => {
-        if (!isTranslationEnabled || !sessionId) return;
+        if (!isTranslationEnabled || !sessionId) {
+            // Clear cache when disabled so it re-scans everything fresh when re-enabled
+            if (!isTranslationEnabled) {
+                setTranslationData({});
+                translatingRef.current.clear();
+            }
+            return;
+        }
 
         const translateNew = async () => {
-            // Identify untranslated items
+            // Identify untranslated items. 
+            // We clone transcripts to avoid closure stale issues if needed, but transcripts is fresh from deps.
             const toTranslate = transcripts.map((t, i) => ({ t, i }))
-                .filter(({ t, i }) => !translations[i] && !translatingRef.current.has(i) && t.text.trim());
+                .filter(({ t, i }) => !translationData[i] && !translatingRef.current.has(i) && t.text.trim());
 
-            for (const { t, i } of toTranslate) {
+            // Reverse so we translate newest first for better UX
+            for (const { t, i } of [...toTranslate].reverse()) {
                 translatingRef.current.add(i);
                 try {
                     const response = await fetch('http://127.0.0.1:3001/translation/translate', {
@@ -107,7 +118,10 @@ export function SessionView({
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        setTranslations(prev => ({ ...prev, [i]: data.translation }));
+                        setTranslationData(prev => ({
+                            ...prev,
+                            [i]: { text: data.translation, warning: data.warning }
+                        }));
                     }
                 } catch (error) {
                     console.error('Translation error:', error);
@@ -118,7 +132,7 @@ export function SessionView({
         };
 
         translateNew();
-    }, [transcripts, isTranslationEnabled, targetLang, sessionId, translations]);
+    }, [transcripts, isTranslationEnabled, targetLang, sessionId]);
 
     // Fetch User Settings for Default Language
     useEffect(() => {
@@ -139,6 +153,37 @@ export function SessionView({
         };
         loadSettings();
     }, [token]);
+
+    // Clear Translations when Target Language Changes so the UI re-translates instantly
+    useEffect(() => {
+        setTranslationData({});
+        translatingRef.current.clear();
+    }, [targetLang]);
+
+    // Track spoken answers to prevent repetitive speaking
+    const lastSpokenIdRef = useRef<string | null>(null);
+
+    // TTS Effect: Trigger speech when a new complete answer arrives
+    useEffect(() => {
+        if (answers.length > 0) {
+            const latestAnswer = answers[answers.length - 1];
+            if (latestAnswer.text && latestAnswer.questionId !== lastSpokenIdRef.current) {
+                if (!latestAnswer.text.includes("❌")) {
+                    ttsService.speak(latestAnswer.text, targetLang);
+                }
+                lastSpokenIdRef.current = latestAnswer.questionId;
+            }
+        }
+    }, [answers, targetLang]);
+
+    // Push-to-Talk (Web Speech Dictation)
+    const { isListening: isPttListening, transcript: pttTranscript, error: pttError } = usePushToTalk({
+        onComplete: (text) => {
+            const lang = isTranslationEnabled ? targetLang : undefined;
+            onSendQuestion(text, lang);
+        },
+        activationKey: 'Space'
+    });
 
     const formatTime = (s: number) => {
         const m = Math.floor(s / 60);
@@ -200,9 +245,9 @@ export function SessionView({
         const filename = `session-${new Date().toISOString().slice(0, 10)}.${type === 'markdown' ? 'md' : 'txt'}`;
         let content = '';
         if (type === 'markdown') {
-            content = generateMarkdown(sessionId, transcripts, answers, translations);
+            content = generateMarkdown(sessionId, transcripts, answers, translationData);
         } else {
-            content = generateText(sessionId, transcripts, answers, translations);
+            content = generateText(sessionId, transcripts, answers, translationData);
         }
         downloadFile(filename, content, type);
         setShowExportMenu(false);
@@ -307,7 +352,7 @@ export function SessionView({
                                 value={targetLang}
                                 onChange={(e) => {
                                     setTargetLang(e.target.value);
-                                    setTranslations({}); // Clear cache on lang change
+                                    setTranslationData({}); // Clear cache on lang change
                                 }}
                                 className="bg-slate-800 text-white text-xs rounded border border-slate-600 px-2 py-1 outline-none"
                             >
@@ -407,7 +452,14 @@ export function SessionView({
                             </div>
                         )}
                     </div>
-                    <button className="btn btn--ghost btn--sm" onClick={onLeaveSession}>
+                    <button className="btn btn--ghost btn--sm" onClick={() => {
+                        // Automatically trigger summarization in the background
+                        fetch(`http://127.0.0.1:3001/sessions/${sessionId}/summarize`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        }).catch(e => console.error("Auto-summarize failed:", e));
+                        onLeaveSession();
+                    }}>
                         End Session
                     </button>
                 </div>
@@ -429,9 +481,14 @@ export function SessionView({
                                         ? 'Listening for speech...'
                                         : 'Click "Start Rec" to begin capturing audio.'}
                                 </p>
-                                <p className="transcript-feed__hint">
-                                    System audio from <strong>{selectedSourceId ? 'Selected Window' : 'Entire Screen'}</strong> will be transcribed.
-                                </p>
+                                {(() => {
+                                    const sourceName = selectedSourceId ? 'Selected Window' : 'Entire Screen';
+                                    return (
+                                        <p className="transcript-feed__hint">
+                                            System audio from <strong>{sourceName}</strong> will be transcribed.
+                                        </p>
+                                    );
+                                })()}
                             </div>
                         ) : (
                             transcripts.map((t, i) => (
@@ -444,15 +501,23 @@ export function SessionView({
                                             </span>
                                         )}
                                     </span>
-                                    <span className="transcript-msg__text">{t.text}</span>
+                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                        <span className="transcript-msg__text">{t.text}</span>
+                                        {isTranslationEnabled && translationData[i] &&
+                                            translationData[i].text.replace(/[^\w]/g, '').toLowerCase() !== t.text.replace(/[^\w]/g, '').toLowerCase() && (
+                                                <div className="transcript-msg__translation mt-2 text-indigo-300 text-sm italic border-l-2 border-indigo-500 pl-2">
+                                                    {translationData[i].text}
+                                                    {translationData[i].warning && (
+                                                        <div className="text-[10px] text-orange-400 mt-1 not-italic">
+                                                            ⚠️ {translationData[i].warning}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                    </div>
                                     <span className="transcript-msg__time">
                                         {t.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
-                                    {isTranslationEnabled && translations[i] && (
-                                        <div className="transcript-msg__translation mt-1 text-indigo-300 text-sm italic border-l-2 border-indigo-500 pl-2">
-                                            {translations[i]}
-                                        </div>
-                                    )}
                                 </div>
                             ))
                         )}
@@ -500,8 +565,33 @@ export function SessionView({
                 )}
             </div>
 
+            {/* AI Input Status Overlay */}
+            {(isPttListening || pttTranscript || pttError) && (
+                <div className="absolute bottom-16 left-0 right-0 flex justify-center pointer-events-none z-10 px-4 transition-opacity duration-200">
+                    <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-xl p-4 flex flex-col gap-3 max-w-2xl w-full pointer-events-auto mt-2">
+                        {/* Voice Dictation Preview */}
+                        <div className="flex items-center gap-3 bg-indigo-900/40 p-3 rounded-lg border border-indigo-500/50">
+                            {pttError ? (
+                                <div className="text-red-400 text-sm font-medium">⚠️ {pttError}</div>
+                            ) : (
+                                <>
+                                    <div className="flex gap-1 animate-pulse">
+                                        <div className="w-2 h-4 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                        <div className="w-2 h-6 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                        <div className="w-2 h-4 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                    </div>
+                                    <div className="text-indigo-200 text-sm font-medium">
+                                        {pttTranscript ? pttTranscript : "Listening... (Hold Space)"}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Input Bar */}
-            <form className="session__input" onSubmit={handleSubmit}>
+            <form className="session__input relative z-20" onSubmit={handleSubmit}>
                 <input
                     type="text"
                     className="session__input-field"

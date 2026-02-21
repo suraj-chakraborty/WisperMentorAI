@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSocket } from '@/hooks/useSocket';
 import { useAudioCapture } from '@/hooks/useAudioCapture';
 import { useAuth } from '@/context/AuthContext';
+import { useLingoContext } from '@lingo.dev/compiler/react';
 import { TitleBar } from '@/components/TitleBar';
 import { Sidebar } from '@/components/Sidebar';
 import { Dashboard } from '@/components/Dashboard';
@@ -15,11 +16,26 @@ import { LoginPage } from '@/components/LoginPage';
 import { SignupPage } from '@/components/SignupPage';
 
 function AuthenticatedApp({ token }: { token: string }) {
+    const { setLocale } = useLingoContext();
     const [activePage, setActivePage] = useState('dashboard');
     const [isOverlay, setIsOverlay] = useState(false);
     const [elapsed, setElapsed] = useState(0);
     const [isTranslationEnabled, setIsTranslationEnabled] = useState(false);
     const [meetingAlertApp, setMeetingAlertApp] = useState<string | null>(null);
+
+    // Sync app language on boot
+    useEffect(() => {
+        fetch('http://127.0.0.1:3001/settings', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.lingo?.preferredLanguage) {
+                    setLocale(data.lingo.preferredLanguage);
+                }
+            })
+            .catch(err => console.error("Failed to load settings:", err));
+    }, [token, setLocale]);
 
     const {
         isConnected,
@@ -27,6 +43,7 @@ function AuthenticatedApp({ token }: { token: string }) {
         sessionStatus,
         transcripts,
         answers,
+        serverError,
         joinSession,
         leaveSession,
         sendQuestion,
@@ -157,6 +174,7 @@ function AuthenticatedApp({ token }: { token: string }) {
                             sessionId={sessionId}
                             isCapturing={isCapturing}
                             onStartSession={startNewSession}
+                            onResumeSession={joinSession}
                             onNavigate={handleNavigate}
                         />
                     )}
@@ -171,7 +189,7 @@ function AuthenticatedApp({ token }: { token: string }) {
                             isConnected={isConnected}
                             isCapturing={isCapturing}
                             audioLevel={audioLevel}
-                            error={audioError}
+                            error={audioError || serverError}
                             onToggleCapture={handleToggleCapture}
                             isMicEnabled={isMicEnabled}
                             toggleMic={toggleMic}

@@ -33,7 +33,12 @@ export class LlmService {
     async generateResponse(messages: ChatMessage[], config?: LlmConfig): Promise<string> {
         const provider = config?.provider || 'ollama';
         const apiKey = config?.apiKey;
-        const model = config?.model;
+        let model = config?.model;
+
+        // Ensure we don't use dated/quota-heavy models if not specified correctly
+        if (provider === 'gemini' && (!model || model.includes('gemini-1.5'))) {
+            model = 'gemini-2.5-flash';
+        }
 
         try {
             switch (provider) {
@@ -42,7 +47,7 @@ export class LlmService {
                 case 'anthropic':
                     return this.callAnthropic(messages, apiKey, model || 'claude-3-opus-20240229');
                 case 'gemini':
-                    return this.callGemini(messages, apiKey, model || 'gemini-pro');
+                    return this.callGemini(messages, apiKey, model); // model already normalized above
                 case 'openrouter':
                     return this.callOpenRouter(messages, apiKey, model || 'openai/gpt-4-turbo');
                 case 'ollama':
@@ -57,7 +62,7 @@ export class LlmService {
 
     private async callOpenAI(messages: ChatMessage[], apiKey?: string, model?: string): Promise<string> {
         if (!apiKey) throw new Error('OpenAI API Key is missing');
-        const openai = new OpenAI({ apiKey });
+        const openai = new OpenAI({ apiKey, timeout: 30000 }); // 30s timeout
         const completion = await openai.chat.completions.create({
             messages: messages as any,
             model: model || 'gpt-4-turbo',
@@ -67,7 +72,7 @@ export class LlmService {
 
     private async callAnthropic(messages: ChatMessage[], apiKey?: string, model?: string): Promise<string> {
         if (!apiKey) throw new Error('Anthropic API Key is missing');
-        const anthropic = new Anthropic({ apiKey });
+        const anthropic = new Anthropic({ apiKey, timeout: 30000 }); // 30s timeout
 
         // Convert messages to Anthropic format (system is separate)
         const systemMessage = messages.find(m => m.role === 'system')?.content || '';
@@ -97,7 +102,6 @@ export class LlmService {
         });
 
         // Convert messages (Filter out system, ensure alternates user/model)
-        // Gemini requires User -> Model -> User
         const history = messages
             .filter(m => m.role !== 'system')
             .slice(0, -1)
@@ -109,7 +113,18 @@ export class LlmService {
         const lastMessage = messages[messages.length - 1].content;
 
         const chat = geminiModel.startChat({ history });
-        const result = await chat.sendMessage(lastMessage);
+
+        // Gemini doesn't have a built-in timeout in the standard SDK call yet, 
+        // so we wrap it in a custom timeout promise.
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Gemini API call timed out after 30s')), 30000);
+        });
+
+        const result = await Promise.race([
+            chat.sendMessage(lastMessage),
+            timeoutPromise
+        ]);
+
         const response = await result.response;
         return response.text();
     }
@@ -134,7 +149,7 @@ export class LlmService {
                 model: model || 'llama3',
                 messages,
                 temperature: 0.7,
-            }, { timeout: 10000 }) // 10s timeout
+            }, { timeout: 120000 }) // 120s timeout
         );
         return response.data.choices[0].message.content;
     }
