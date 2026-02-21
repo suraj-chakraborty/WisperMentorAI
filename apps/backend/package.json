@@ -17,6 +17,7 @@
     "dependencies": {
         "@anthropic-ai/sdk": "^0.74.0",
         "@google/generative-ai": "^0.24.1",
+        "@lingo.dev/compiler": "^0.3.8",
         "@nestjs/axios": "^4.0.1",
         "@nestjs/common": "^10.3.0",
         "@nestjs/config": "^3.2.0",

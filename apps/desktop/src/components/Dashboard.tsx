@@ -6,10 +6,11 @@ interface DashboardProps {
     sessionId: string | null;
     isCapturing: boolean;
     onStartSession: () => void;
+    onResumeSession: (id: string) => void;
     onNavigate: (page: string) => void;
 }
 
-export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onNavigate }: DashboardProps) {
+export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onResumeSession, onNavigate }: DashboardProps) {
     const [sessions, setSessions] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(false);
 
@@ -51,8 +52,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                 <div className="dashboard__welcome-content">
                     <h1 className="dashboard__title">WhisperMentor AI</h1>
                     <p className="dashboard__subtitle">
-                        Your private co-mentor for live sessions. Start a session to begin
-                        capturing knowledge in real time.
+                        Your private co-mentor for live sessions. Start a session to begin capturing knowledge in real time.
                     </p>
                     <div className="dashboard__actions">
                         <button
@@ -101,7 +101,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                     <div className="connection-item">
                         <span className={`connection-dot ${isCapturing ? 'connection-dot--on' : 'connection-dot--off'}`} />
                         <span className="connection-label">Audio Capture</span>
-                        <span className="connection-value">{isCapturing ? 'Active' : 'Idle'}</span>
+                        <span className="connection-value">{isCapturing ? <span>Active</span> : <span>Idle</span>}</span>
                     </div>
                     <div className="connection-item">
                         <span className="connection-dot connection-dot--on" />
@@ -129,9 +129,20 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                                     <span className="session-card__date">
                                         {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString()}
                                     </span>
-                                    <span className={`session-card__status ${s.endedAt ? 'ended' : 'active'}`}>
-                                        {s.endedAt ? 'Completed' : 'Active'}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span className={`session-card__status ${s.endedAt ? 'ended' : 'active'}`}>
+                                            {s.endedAt ? <span>Completed</span> : <span>Active</span>}
+                                        </span>
+                                        <button
+                                            className="btn btn--sm btn--primary"
+                                            onClick={() => {
+                                                onResumeSession(s.id);
+                                                onNavigate('session');
+                                            }}
+                                        >
+                                            View Session
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {s.summary ? (
@@ -161,21 +172,21 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                                     </div>
                                 ) : (
                                     <div className="session-card__no-summary">
-                                        <p>No summary available.</p>
+                                        <p><span>No summary available.</span></p>
                                         {s.endedAt && (
                                             <button
                                                 className="btn btn--sm btn--secondary"
                                                 onClick={() => handleGenerateSummary(s.id)}
                                                 disabled={loading}
                                             >
-                                                {loading ? 'Generating...' : '✨ Generate AI Summary'}
+                                                {loading ? <span>Generating...</span> : <span>✨ Generate AI Summary</span>}
                                             </button>
                                         )}
                                     </div>
                                 )}
 
                                 <div className="session-card__stats">
-                                    <span>💬 {s._count?.transcripts || 0} transcripts</span>
+                                    <span>💬 {s._count?.transcripts || 0} <span>transcripts</span></span>
                                 </div>
                             </div>
                         ))}

@@ -7,7 +7,7 @@ export const generateMarkdown = (
     sessionId: string,
     transcripts: TranscriptEntry[],
     answers: AnswerEntry[],
-    translations: Record<number, string> = {}
+    translations: Record<number, { text: string; warning?: string }> = {}
 ): string => {
     const date = new Date().toLocaleDateString();
     const time = new Date().toLocaleTimeString();
@@ -29,7 +29,10 @@ export const generateMarkdown = (
             md += `:\n${t.text}\n`;
 
             if (translations[i]) {
-                md += `> *${translations[i]}*\n`;
+                md += `> *${translations[i].text}*\n`;
+                if (translations[i].warning) {
+                    md += `> **Warning:** ${translations[i].warning}\n`;
+                }
             }
             md += `\n`;
         });
@@ -54,7 +57,7 @@ export const generateText = (
     sessionId: string,
     transcripts: TranscriptEntry[],
     answers: AnswerEntry[],
-    translations: Record<number, string> = {}
+    translations: Record<number, { text: string; warning?: string }> = {}
 ): string => {
     const date = new Date().toLocaleDateString();
 
@@ -69,7 +72,10 @@ export const generateText = (
         const timestamp = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         text += `[${timestamp}] ${t.speaker || 'Speaker'}: ${t.text}\n`;
         if (translations[i]) {
-            text += `    [Translation]: ${translations[i]}\n`;
+            text += `    [Translation]: ${translations[i].text}\n`;
+            if (translations[i].warning) {
+                text += `    [Warning]: ${translations[i].warning}\n`;
+            }
         }
     });
 

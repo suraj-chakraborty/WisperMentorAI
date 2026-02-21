@@ -53,7 +53,7 @@ function createMainWindow() {
     mainWindow.loadFile(path__namespace.join(DIST, "index.html"));
   }
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+    mainWindow == null ? void 0 : mainWindow.show();
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -61,7 +61,7 @@ function createMainWindow() {
   mainWindow.on("close", (e) => {
     if (!isQuitting) {
       e.preventDefault();
-      mainWindow?.hide();
+      mainWindow == null ? void 0 : mainWindow.hide();
     }
   });
   startMeetingDetection();
@@ -98,8 +98,8 @@ function createTray() {
     {
       label: "Show WhisperMentor",
       click: () => {
-        mainWindow?.show();
-        mainWindow?.focus();
+        mainWindow == null ? void 0 : mainWindow.show();
+        mainWindow == null ? void 0 : mainWindow.focus();
       }
     },
     {
@@ -108,7 +108,7 @@ function createTray() {
     },
     {
       label: "Toggle Mic",
-      click: () => mainWindow?.webContents.send("mic:toggle")
+      click: () => mainWindow == null ? void 0 : mainWindow.webContents.send("mic:toggle")
     },
     { type: "separator" },
     {
@@ -122,24 +122,24 @@ function createTray() {
   tray.setToolTip("WhisperMentor AI");
   tray.setContextMenu(contextMenu);
   tray.on("click", () => {
-    if (mainWindow?.isVisible()) {
+    if (mainWindow == null ? void 0 : mainWindow.isVisible()) {
       mainWindow.focus();
     } else {
-      mainWindow?.show();
+      mainWindow == null ? void 0 : mainWindow.show();
     }
   });
 }
 function registerIpcHandlers() {
   electron.ipcMain.handle("app:version", () => electron.app.getVersion());
-  electron.ipcMain.on("window:minimize", () => mainWindow?.minimize());
+  electron.ipcMain.on("window:minimize", () => mainWindow == null ? void 0 : mainWindow.minimize());
   electron.ipcMain.on("window:maximize", () => {
-    if (mainWindow?.isMaximized()) {
+    if (mainWindow == null ? void 0 : mainWindow.isMaximized()) {
       mainWindow.unmaximize();
     } else {
-      mainWindow?.maximize();
+      mainWindow == null ? void 0 : mainWindow.maximize();
     }
   });
-  electron.ipcMain.on("window:close", () => mainWindow?.close());
+  electron.ipcMain.on("window:close", () => mainWindow == null ? void 0 : mainWindow.close());
   electron.ipcMain.handle("overlay:toggle", () => {
     toggleOverlay();
     return isOverlayMode;
@@ -192,7 +192,7 @@ electron.app.whenReady().then(() => {
   createMainWindow();
   createTray();
   electron.globalShortcut.register("CommandOrControl+Shift+M", () => {
-    mainWindow?.webContents.send("mic:toggle");
+    mainWindow == null ? void 0 : mainWindow.webContents.send("mic:toggle");
   });
   electron.globalShortcut.register("CommandOrControl+Shift+O", () => {
     if (mainWindow) {

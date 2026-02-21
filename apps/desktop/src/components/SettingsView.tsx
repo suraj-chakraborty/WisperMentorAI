@@ -1,13 +1,13 @@
-
 import React, { useState, useEffect } from 'react';
-import './SettingsView.css';
 
 import { useAuth } from '../context/AuthContext';
+import { useLingoContext } from '@lingo.dev/compiler/react';
 
 // API base url
 const API_URL = 'http://127.0.0.1:3001';
 
 export const SettingsView: React.FC = () => {
+    const { setLocale } = useLingoContext();
     const [settings, setSettings] = useState<any>({
         llm: {
             provider: 'ollama',
@@ -68,7 +68,11 @@ export const SettingsView: React.FC = () => {
             });
 
             if (res.ok) {
-                setMsg('Settings saved successfully!');
+                setMsg('Settings saved!');
+                // Dynamically update the UI language
+                if (settings.lingo?.preferredLanguage) {
+                    setLocale(settings.lingo.preferredLanguage);
+                }
             } else {
                 setMsg('Failed to save settings.');
             }
@@ -83,7 +87,7 @@ export const SettingsView: React.FC = () => {
         <div className="settings-view">
             <header className="settings__header">
                 <h2 className="settings__title">
-                    Settings & Configuration
+                    Settings
                 </h2>
                 <p className="settings__subtitle">Manage your AI brain and application preferences</p>
             </header>
@@ -94,8 +98,8 @@ export const SettingsView: React.FC = () => {
                         🧠
                     </div>
                     <div className="settings__section-info">
-                        <h3>AI Provider</h3>
-                        <p>Choose the brain that powers your mentor</p>
+                        <h3>AI Provider Settings</h3>
+                        <p>Configure the core LLM engine used for summarization, entity extraction, and reasoning.</p>
                     </div>
                 </div>
 
@@ -121,7 +125,7 @@ export const SettingsView: React.FC = () => {
                     </div>
                     {/* Provider Select */}
                     <div className="settings__field">
-                        <label className="settings__label">Select Provider</label>
+                        <label className="settings__label">Provider</label>
                         <div className="settings__input-group">
                             <select
                                 className="settings__select"
@@ -161,56 +165,63 @@ export const SettingsView: React.FC = () => {
 
                     {/* Model Name Input */}
                     <div className="settings__field">
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium text-slate-300">Model Name (Optional)</label>
+                        <label className="settings__label">ModelName (Optional)</label>
+                        <div className="settings__input-group">
                             <input
                                 type="text"
                                 value={settings.llm.model}
                                 onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, model: e.target.value } })}
                                 placeholder="e.g. llama3, gpt-4-turbo"
-                                className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                className="settings__input"
                             />
                         </div>
-                        <p className="settings__hint">Leave empty to use the provider's default model.</p>
+                        <p className="settings__hint" style={{ marginTop: '8px' }}>Leave empty to use the provider's default model.</p>
                     </div>
                 </div>
 
-                <div className="space-y-4 pt-4 border-t border-slate-800">
-                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                        🌍 Localization (Lingo.dev)
-                    </h3>
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium text-slate-300">Lingo.dev API Key (Optional)</label>
-                        <input
-                            type="password"
-                            value={settings.lingo?.apiKey || ''}
-                            onChange={(e) => setSettings({ ...settings, lingo: { ...settings.lingo, apiKey: e.target.value } })}
-                            placeholder="sk-..."
-                            className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
-                        <p className="text-xs text-slate-500">
+                <div className="settings__section-title" style={{ marginTop: '30px' }}>
+                    <div className="settings__icon-box">🌍</div>
+                    <div className="settings__section-info">
+                        <h3>Live Translation (Lingo.dev)</h3>
+                        <p>Configure Lingo.dev for blazing-fast real-time speech translation.</p>
+                    </div>
+                </div>
+
+                <div className="settings__form">
+                    <div className="settings__field">
+                        <label className="settings__label">Lingo.dev API Key (Optional)</label>
+                        <div className="settings__input-group">
+                            <input
+                                type="password"
+                                value={settings.lingo?.apiKey || ''}
+                                onChange={(e) => setSettings({ ...settings, lingo: { ...settings.lingo, apiKey: e.target.value } })}
+                                placeholder="sk-..."
+                                className="settings__input"
+                            />
+                        </div>
+                        <p className="settings__hint" style={{ marginTop: '8px' }}>
                             Leave blank to use LLM fallback for translation.
                         </p>
                     </div>
 
-                    <div className="flex flex-col gap-2 mt-4">
-                        <label className="text-sm font-medium text-slate-300">Default Target Language</label>
+                    <div className="settings__field">
+                        <label className="settings__label">Default Target Language</label>
                         <div className="settings__input-group">
                             <select
-                                className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none w-full"
+                                className="settings__select"
                                 value={settings.lingo?.preferredLanguage || 'es'}
                                 onChange={(e) => setSettings({ ...settings, lingo: { ...settings.lingo, preferredLanguage: e.target.value } })}
                             >
-                                <option value="en">English (English)</option>
-                                <option value="es">Spanish (Español)</option>
-                                <option value="fr">French (Français)</option>
-                                <option value="de">German (Deutsch)</option>
+                                <option value="en">English</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
                                 <option value="zh">Chinese (中文)</option>
-                                <option value="ja">Japanese (日本語)</option>
+                                <option value="ja">Japanese</option>
                                 <option value="pt">Portuguese (Português)</option>
                                 <option value="it">Italian (Italiano)</option>
                                 <option value="ru">Russian (Русский)</option>
-                                <option value="hi">Hindi (हिंदी)</option>
+                                <option value="hi">Hindi</option>
                                 <option value="ko">Korean (한국어)</option>
                                 <option value="nl">Dutch (Nederlands)</option>
                                 <option value="tr">Turkish (Türkçe)</option>
@@ -224,8 +235,8 @@ export const SettingsView: React.FC = () => {
                 <div className="settings__footer">
                     <div className="settings__status">
                         {msg && (
-                            <span className={msg.includes('success') ? 'settings__status--success' : 'settings__status--error'}>
-                                {msg.includes('success') ? '✅' : '⚠️'} {msg}
+                            <span className={msg.includes('success') || msg.includes('!') ? 'settings__status--success' : 'settings__status--error'}>
+                                {msg.includes('success') || msg.includes('!') ? '✅' : '⚠️'} {msg}
                             </span>
                         )}
                     </div>

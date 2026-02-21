@@ -28,13 +28,20 @@ app.add_middleware(
 # Load Whisper Model (Global)
 # Use "tiny" or "base" for speed on CPU. "small" is better but slower.
 # device="cpu" and compute_type="int8" are safe defaults for most machines.
-MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")
+MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "tiny")
 DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 
 logger.info(f"Loading Whisper model: {MODEL_SIZE} on {DEVICE} ({COMPUTE_TYPE})...")
 try:
-    model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+    # Use 4 threads for better CPU performance if available
+    model = WhisperModel(
+        MODEL_SIZE, 
+        device=DEVICE, 
+        compute_type=COMPUTE_TYPE,
+        cpu_threads=4,
+        num_workers=2
+    )
     logger.info("Model loaded successfully.")
 except Exception as e:
     logger.error(f"Failed to load model: {e}")
@@ -49,6 +56,10 @@ try:
 except Exception as e:
     logger.error(f"Failed to load embedding model: {e}")
     embed_model = None
+
+# Global Lock for Whisper Model (Faster-Whisper is not thread-safe for CPU compute_type=int8 sometimes)
+import asyncio
+model_lock = asyncio.Lock()
 
 class EmbedRequest(BaseModel):
     text: str
@@ -91,7 +102,7 @@ def process_transcription(path):
     # Transcribe
     segments, info = model.transcribe(
         path, 
-        beam_size=5, 
+        beam_size=1, 
         vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
         initial_prompt="Live mentoring session. Technical discussion.",
@@ -151,7 +162,7 @@ async def transcribe_audio(
             # Transcribe with Task
             segments, info = model.transcribe(
                 tmp_path, 
-                beam_size=5, 
+                beam_size=1, 
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500),
                 initial_prompt="Live mentoring session. Technical discussion.",
@@ -163,7 +174,11 @@ async def transcribe_audio(
             text = " ".join([segment.text for segment in segments])
             return text, info, speaker
 
-        full_text, info, speaker = await loop.run_in_executor(None, run_model)
+        async with model_lock:
+            start_time = asyncio.get_event_loop().time()
+            full_text, info, speaker = await loop.run_in_executor(None, run_model)
+            end_time = asyncio.get_event_loop().time()
+            logger.info(f"Transcription finished in {end_time - start_time:.2f}s for {tmp_path}")
 
         # Cleanup
         os.remove(tmp_path)
@@ -199,6 +214,33 @@ async def embed_text(request: EmbedRequest):
     except Exception as e:
         logger.error(f"Embedding failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/translate")
+async def translate_text(request: EmbedRequest):
+    try:
+        # Fallback to a small dictionary of common technical terms if deep-translator is missing
+        # This keeps the "AI on 8000" alive even if disk is full.
+        tech_dict = {
+            "application": "aplicación",
+            "backend": "backend",
+            "frontend": "frontend",
+            "database": "base de datos",
+            "server": "servidor",
+            "client": "cliente",
+            "authentication": "autenticación",
+            "authorization": "autorización"
+        }
+        
+        text_lower = request.text.lower().strip()
+        if text_lower in tech_dict:
+            return {"translation": tech_dict[text_lower], "warning": "Local Dictionary Match"}
+            
+        from deep_translator import GoogleTranslator
+        translated = GoogleTranslator(source='auto', target='en').translate(request.text)
+        return {"translation": translated}
+    except Exception as e:
+        logger.error(f"Local translation failed: {e}")
+        return {"translation": request.text, "warning": "Local Pass-through (Offline/Full Disk)"}
 
 if __name__ == "__main__":
     import uvicorn

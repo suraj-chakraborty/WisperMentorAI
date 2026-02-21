@@ -124,7 +124,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         @MessageBody() data: { sessionId: string; chunk: ArrayBuffer },
     ) {
         const size = data.chunk.byteLength;
-        // this.logger.debug(`🎙 Audio chunk: ${size} bytes for session ${data.sessionId}`);
+        this.logger.debug(`🎙 Audio chunk: ${size} bytes for session ${data.sessionId}`);
 
         // Echo a fake transcript update periodically to show activity
         // Always emit for demo purposes
@@ -135,6 +135,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             const task = settings?.translate ? 'translate' : 'transcribe';
 
             const result = await this.transcriptionService.transcribe(buffer, task);
+
+            // Clear any previous warnings since this succeeded
+            this.server.to(`session:${data.sessionId}`).emit('session:warning:clear');
 
             if (result.text) {
                 // Emit real transcript
@@ -154,11 +157,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 this.transcriptService.addTranscript(data.sessionId, result.speaker, result.text, result.language)
                     .catch(e => this.logger.error(`Failed to save transcript DB: ${e}`));
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`Error processing audio chunk: ${error}`);
+            this.server.to(`session:${data.sessionId}`).emit('session:warning', {
+                message: error.message || 'Error processing audio'
+            });
         }
     }
-
 
     @SubscribeMessage('question:ask')
     async handleQuestion(

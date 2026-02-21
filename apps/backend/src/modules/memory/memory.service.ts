@@ -198,7 +198,7 @@ export class MemoryService {
     private async getEmbedding(text: string): Promise<number[]> {
         try {
             const { data } = await firstValueFrom(
-                this.httpService.post(`${this.aiServiceUrl}/embed`, { text }, { timeout: 5000 })
+                this.httpService.post(`${this.aiServiceUrl}/embed`, { text }, { timeout: 60000 })
             );
             return data.embedding;
         } catch (error) {

@@ -12,7 +12,12 @@ export class TranslationController {
             throw new HttpException('Text and targetLang are required', HttpStatus.BAD_REQUEST);
         }
 
-        const translatedText = await this.translationService.translate(body.text, body.targetLang);
-        return { original: body.text, translation: translatedText, targetLang: body.targetLang };
+        const result = await this.translationService.translate(body.text, body.targetLang);
+        return {
+            original: body.text,
+            translation: result.translation,
+            warning: result.warning,
+            targetLang: body.targetLang
+        };
     }
 }

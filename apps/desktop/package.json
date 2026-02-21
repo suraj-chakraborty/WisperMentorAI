@@ -12,9 +12,13 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "@lingo.dev/compiler": "^0.3.8",
+        "i18next": "^25.8.11",
+        "lingo.dev": "^0.131.6",
         "lucide-react": "^0.574.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
+        "react-i18next": "^16.5.4",
         "react-markdown": "^10.1.0",
         "socket.io-client": "^4.7.0"
     },

@@ -120,8 +120,8 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             let startTime = Date.now();
 
             const SILENCE_THRESHOLD = 2;
-            const SILENCE_MS = 2000;
-            const MAX_MS = 60000;
+            const SILENCE_MS = 2500;
+            const MAX_MS = 20000;
 
             processor.onaudioprocess = e => {
                 if (isPausedRef.current) {

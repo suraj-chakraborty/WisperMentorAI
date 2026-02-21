@@ -1,11 +1,38 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
-export class SessionService {
+export class SessionService implements OnModuleInit {
     private readonly logger = new Logger(SessionService.name);
 
     constructor(private readonly prisma: PrismaService) { }
+
+    async onModuleInit() {
+        // Run cleanup on startup
+        this.cleanupOldSessions();
+        // Run cleanup every hour (3600000 ms)
+        setInterval(() => this.cleanupOldSessions(), 3600000);
+    }
+
+    private async cleanupOldSessions() {
+        // Calculate the timestamp for 3 days ago
+        const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
+        try {
+            const result = await this.prisma.session.deleteMany({
+                where: {
+                    createdAt: {
+                        lt: threeDaysAgo
+                    }
+                }
+            });
+            if (result.count > 0) {
+                this.logger.log(`Automatic Cleanup: Deleted ${result.count} sessions older than 3 days.`);
+            }
+        } catch (error) {
+            this.logger.error('Failed to run automatic cleanup of old sessions', error);
+        }
+    }
 
     async createSession(mentorId: string) {
         this.logger.log(`Creating session for mentor: ${mentorId}`);
