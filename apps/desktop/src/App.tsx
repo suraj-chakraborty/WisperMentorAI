@@ -12,6 +12,7 @@ import { StatusBar } from '@/components/StatusBar';
 import { SettingsView } from '@/components/SettingsView';
 import { GlossaryView } from '@/components/GlossaryView';
 import { KnowledgeGraphView } from '@/components/KnowledgeGraphView';
+
 import { LoginPage } from '@/components/LoginPage';
 import { SignupPage } from '@/components/SignupPage';
 
@@ -176,6 +177,7 @@ function AuthenticatedApp({ token }: { token: string }) {
                             onStartSession={startNewSession}
                             onResumeSession={joinSession}
                             onNavigate={handleNavigate}
+                            token={token}
                         />
                     )}
                     {activePage === 'session' && (

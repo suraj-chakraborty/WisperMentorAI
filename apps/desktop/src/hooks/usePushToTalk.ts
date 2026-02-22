@@ -1,23 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-// Extend Window to include webkitSpeechRecognition
-declare global {
-    interface Window {
-        SpeechRecognition: any;
-        webkitSpeechRecognition: any;
-    }
-}
-
 interface UsePushToTalkProps {
     onComplete: (text: string) => void;
     activationKey?: string; // e.g. "ControlLeft", "Space"
 }
 
+/**
+ * Push-to-talk hook that records audio via MediaRecorder
+ * and sends it to the local Whisper AI service for transcription.
+ * This avoids the Chrome Web Speech API which doesn't work in Electron.
+ */
 export function usePushToTalk({ onComplete, activationKey = 'Space' }: UsePushToTalkProps) {
     const [isListening, setIsListening] = useState(false);
     const [transcript, setTranscript] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const recognitionRef = useRef<any>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+    const streamRef = useRef<MediaStream | null>(null);
     const isKeyPressed = useRef(false);
 
     // Check if the user is typing in an input field so we don't steal Spacebar
@@ -26,55 +25,84 @@ export function usePushToTalk({ onComplete, activationKey = 'Space' }: UsePushTo
         return activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
     };
 
-    useEffect(() => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            setError('Speech recognition not supported in this browser.');
-            return;
-        }
+    const startRecording = useCallback(async () => {
+        try {
+            setError(null);
+            setTranscript('');
+            chunksRef.current = [];
 
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US'; // We could make this dynamic if needed
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            streamRef.current = stream;
 
-        recognition.onresult = (event: any) => {
-            let finalTranscript = '';
-            let interimTranscript = '';
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : 'audio/webm'
+            });
 
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
-                } else {
-                    interimTranscript += event.results[i][0].transcript;
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    chunksRef.current.push(e.data);
                 }
-            }
-            setTranscript(finalTranscript || interimTranscript);
-        };
+            };
 
-        recognition.onerror = (event: any) => {
-            console.error('Speech recognition error', event.error);
-            if (event.error === 'network') {
-                setError('Network error: Cannot reach speech servers. Try again later.');
-            } else if (event.error === 'not-allowed') {
-                setError('Microphone access denied. Please allow microphone permissions.');
-            } else {
-                setError(`Speech recognition failed (${event.error})`);
-            }
-            setIsListening(false);
-        };
+            mediaRecorder.onstop = async () => {
+                // Stop all tracks
+                stream.getTracks().forEach(t => t.stop());
+                streamRef.current = null;
 
-        recognition.onend = () => {
-            // If key is still pressed, it means recognition stopped unexpectedly, we might need to restart it
-            // For simplicity, we just set listening to false and handle sending text on keyup
-            setIsListening(false);
-        };
+                if (chunksRef.current.length === 0) {
+                    setTranscript('');
+                    return;
+                }
 
-        recognitionRef.current = recognition;
+                const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+                chunksRef.current = [];
 
-        return () => {
-            recognition.stop();
-        };
+                // Send to local Whisper AI service
+                try {
+                    setTranscript('Transcribing...');
+                    const formData = new FormData();
+                    formData.append('file', audioBlob, 'recording.webm');
+
+                    const response = await fetch('http://127.0.0.1:8000/transcribe', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Transcription failed: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    const text = data.text?.trim() || '';
+                    setTranscript(text);
+
+                    if (text.length > 0) {
+                        onComplete(text);
+                    }
+                } catch (err: any) {
+                    console.error('Transcription error:', err);
+                    setError(`Transcription failed: ${err.message}`);
+                    setTranscript('');
+                }
+            };
+
+            mediaRecorderRef.current = mediaRecorder;
+            mediaRecorder.start(250); // Collect chunks every 250ms
+            setIsListening(true);
+        } catch (err: any) {
+            console.error('Failed to start recording:', err);
+            setError(`Microphone error: ${err.message}`);
+        }
+    }, [onComplete]);
+
+    const stopRecording = useCallback(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+            mediaRecorderRef.current = null;
+        }
+        setIsListening(false);
     }, []);
 
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -82,37 +110,18 @@ export function usePushToTalk({ onComplete, activationKey = 'Space' }: UsePushTo
         if (e.code === activationKey && !isKeyPressed.current && !e.repeat) {
             e.preventDefault();
             isKeyPressed.current = true;
-            setTranscript('');
-            setError(null);
-            try {
-                recognitionRef.current?.start();
-                setIsListening(true);
-            } catch (err) {
-                // Ignore if already started
-            }
+            startRecording();
         }
-    }, [activationKey]);
+    }, [activationKey, startRecording]);
 
     const handleKeyUp = useCallback((e: KeyboardEvent) => {
         if (isTyping()) return;
         if (e.code === activationKey && isKeyPressed.current) {
             e.preventDefault();
             isKeyPressed.current = false;
-            recognitionRef.current?.stop();
-            setIsListening(false);
-
-            // Allow a tiny delay for final results to process before sending
-            setTimeout(() => {
-                setTranscript((current) => {
-                    const finalized = current.trim();
-                    if (finalized.length > 0) {
-                        onComplete(finalized);
-                    }
-                    return ''; // Reset after sending
-                });
-            }, 300);
+            stopRecording();
         }
-    }, [activationKey, onComplete]);
+    }, [activationKey, stopRecording]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);
@@ -123,6 +132,16 @@ export function usePushToTalk({ onComplete, activationKey = 'Space' }: UsePushTo
             window.removeEventListener('keyup', handleKeyUp);
         };
     }, [handleKeyDown, handleKeyUp]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
+            }
+            streamRef.current?.getTracks().forEach(t => t.stop());
+        };
+    }, []);
 
     return {
         isListening,

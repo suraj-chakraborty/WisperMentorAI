@@ -3,11 +3,11 @@ import type { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
 import ReactMarkdown from 'react-markdown';
 import SourcePicker from './SourcePicker';
 import { Modal } from './Modal';
-import { GlossaryView } from './GlossaryView';
-import { KnowledgeGraphView } from './KnowledgeGraphView';
+
 import { usePushToTalk } from '../hooks/usePushToTalk';
 import { ttsService } from '../utils/TextToSpeechService';
 import { generateMarkdown, generateText, downloadFile } from '../utils/exportUtils';
+import { TypewriterText } from './TypewriterText';
 
 interface SessionViewProps {
     sessionId: string | null;
@@ -61,10 +61,24 @@ export function SessionView({
     // Source Picker State (Moved up to fix hooks error)
     // Source Picker State
     const [showSourcePicker, setShowSourcePicker] = useState(false);
-    const [showGlossary, setShowGlossary] = useState(false);
-    const [showGraph, setShowGraph] = useState(false);
+
     const [selectedSourceId, setSelectedSourceId] = useState<string | undefined>(undefined);
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [voiceEnabled, setVoiceEnabled] = useState(true);
+
+    // Track how many transcripts existed at mount to skip animation for history
+    const mountedTranscriptCountRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (mountedTranscriptCountRef.current === null && transcripts.length > 0) {
+            mountedTranscriptCountRef.current = transcripts.length;
+        }
+    }, [transcripts]);
+    // Also set to 0 on fresh mount with no transcripts
+    useEffect(() => {
+        if (mountedTranscriptCountRef.current === null) {
+            mountedTranscriptCountRef.current = 0;
+        }
+    }, []);
 
     // Translation State
     const [translationData, setTranslationData] = useState<Record<number, { text: string; warning?: string }>>({});
@@ -113,7 +127,10 @@ export function SessionView({
                 try {
                     const response = await fetch('http://127.0.0.1:3001/translation/translate', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
                         body: JSON.stringify({ text: t.text, targetLang })
                     });
                     if (response.ok) {
@@ -168,7 +185,8 @@ export function SessionView({
         if (answers.length > 0) {
             const latestAnswer = answers[answers.length - 1];
             if (latestAnswer.text && latestAnswer.questionId !== lastSpokenIdRef.current) {
-                if (!latestAnswer.text.includes("❌")) {
+                if (!latestAnswer.text.includes("❌") && voiceEnabled) {
+                    console.log(`🔊 SessionView: Triggering TTS for answer ${latestAnswer.questionId} in ${targetLang}`);
                     ttsService.speak(latestAnswer.text, targetLang);
                 }
                 lastSpokenIdRef.current = latestAnswer.questionId;
@@ -280,17 +298,6 @@ export function SessionView({
                                 className={`btn btn--sm ${isPaused ? 'btn--primary' : 'btn--secondary'}`}
                                 onClick={togglePause}
                                 title={isPaused ? 'Resume Recording' : 'Pause Recording'}
-                                style={{
-                                    marginLeft: '8px',
-                                    borderRadius: '50%',
-                                    width: '32px',
-                                    height: '32px',
-                                    padding: 0,
-                                    marginRight: '8px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}
                             >
                                 {isPaused ? '▶' : '⏸'}
                             </button>
@@ -298,12 +305,11 @@ export function SessionView({
 
                         {!isCapturing && (
                             <button
-                                className="btn btn--secondary btn--icon-only"
+                                className="btn btn--secondary btn--sm"
                                 onClick={() => setShowSourcePicker(true)}
                                 title="Select Audio Source (Screen/Window)"
-                                style={{ padding: '8px', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
                                     <line x1="8" y1="21" x2="16" y2="21"></line>
                                     <line x1="12" y1="17" x2="12" y2="21"></line>
@@ -315,22 +321,8 @@ export function SessionView({
                     {isCapturing && (
                         <button
                             onClick={toggleMic}
-                            className={`session__mic-btn ${isMicEnabled ? 'session__mic-btn--on' : ''}`}
+                            className={`btn btn--sm ${isMicEnabled ? 'btn--primary' : 'btn--secondary'}`}
                             title={isMicEnabled ? 'Mute Mic' : 'Unmute Mic'}
-                            style={{
-                                marginLeft: '10px',
-                                padding: '8px 16px',
-                                borderRadius: '20px',
-                                border: 'none',
-                                background: isMicEnabled ? '#10b981' : '#374151',
-                                color: 'white',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                fontWeight: 600,
-                                fontSize: '14px'
-                            }}
                         >
                             <span>{isMicEnabled ? '🎤' : '🔇'}</span>
                             {isMicEnabled ? 'Mic ON' : 'Mic OFF'}
@@ -380,6 +372,13 @@ export function SessionView({
                         >
                             {isTranslationEnabled ? '🌐 On' : '🌐 Translate'}
                         </button>
+                        <button
+                            className={`btn btn--sm ${voiceEnabled ? 'btn--primary' : 'btn--secondary'}`}
+                            onClick={() => setVoiceEnabled(!voiceEnabled)}
+                            title={voiceEnabled ? 'Disable Voice Output' : 'Enable Voice Output'}
+                        >
+                            {voiceEnabled ? '🔊 Voice' : '🔇 Muted'}
+                        </button>
                     </div>
                 </div>
 
@@ -396,21 +395,7 @@ export function SessionView({
                     >
                         Q&A ({answers.length})
                     </button>
-                    <div style={{ width: '1px', background: '#334155', margin: '8px 4px' }} />
-                    <button
-                        className="session__tab"
-                        onClick={() => setShowGlossary(true)}
-                        title="View session glossary"
-                    >
-                        📚 Glossary
-                    </button>
-                    <button
-                        className="session__tab"
-                        onClick={() => setShowGraph(true)}
-                        title="View knowledge graph"
-                    >
-                        🕸️ Graph
-                    </button>
+
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <button
@@ -502,11 +487,17 @@ export function SessionView({
                                         )}
                                     </span>
                                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                        <span className="transcript-msg__text">{t.text}</span>
+                                        {i >= (mountedTranscriptCountRef.current ?? transcripts.length)
+                                            ? <TypewriterText className="transcript-msg__text" text={t.text} speed={10} />
+                                            : <span className="transcript-msg__text">{t.text}</span>
+                                        }
                                         {isTranslationEnabled && translationData[i] &&
                                             translationData[i].text.replace(/[^\w]/g, '').toLowerCase() !== t.text.replace(/[^\w]/g, '').toLowerCase() && (
                                                 <div className="transcript-msg__translation mt-2 text-indigo-300 text-sm italic border-l-2 border-indigo-500 pl-2">
-                                                    {translationData[i].text}
+                                                    {i >= (mountedTranscriptCountRef.current ?? transcripts.length)
+                                                        ? <TypewriterText text={translationData[i].text} speed={10} />
+                                                        : translationData[i].text
+                                                    }
                                                     {translationData[i].warning && (
                                                         <div className="text-[10px] text-orange-400 mt-1 not-italic">
                                                             ⚠️ {translationData[i].warning}
@@ -604,24 +595,7 @@ export function SessionView({
                 </button>
             </form>
 
-            {/* Modals */}
-            <Modal
-                isOpen={showGlossary}
-                onClose={() => setShowGlossary(false)}
-                title="📚 Session Glossary"
-                size="large"
-            >
-                <GlossaryView sessionId={sessionId} />
-            </Modal>
 
-            <Modal
-                isOpen={showGraph}
-                onClose={() => setShowGraph(false)}
-                title="🕸️ Knowledge Graph"
-                size="large"
-            >
-                <KnowledgeGraphView sessionId={sessionId} />
-            </Modal>
         </div>
     );
 }

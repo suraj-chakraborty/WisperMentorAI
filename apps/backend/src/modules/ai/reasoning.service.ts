@@ -17,7 +17,7 @@ export class ReasoningService {
         private readonly translationService: TranslationService
     ) { }
 
-    async ask(question: string, sessionId: string, targetLang?: string): Promise<string> {
+    async ask(question: string, sessionId: string, targetLang?: string, userId?: string): Promise<string> {
         // ... (existing ask method) ...
         this.logger.log(`Reasoning about: "${question}"`);
 
@@ -54,9 +54,10 @@ DO NOT use markdown in the output. Just raw JSON.`
         ];
 
         // Fetch Settings
-        const settings = await this.settingsService.getRawSettings('demo-user');
+        const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const llmConfig = settings.llm || {};
         const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
+        this.logger.log(`🔑 [DEBUG] userId=${userId || 'demo-user'}, provider=${provider}, apiKey=${llmConfig.apiKey ? llmConfig.apiKey.slice(0, 8) + '...' : '(empty)'}`);
 
         const response = await this.llmService.generateResponse(messages, {
             provider,
@@ -73,7 +74,8 @@ DO NOT use markdown in the output. Just raw JSON.`
             // Translation Logic
             if (targetLang && targetLang !== 'en') {
                 // Translate Answer
-                answer = await this.translationService.translate(answer, targetLang);
+                const { translation: translatedAnswer } = await this.translationService.translate(answer, targetLang, userId);
+                answer = translatedAnswer;
 
                 // Format with Quotes
                 let formattedResponse = `${answer}\n\n`;
@@ -81,7 +83,7 @@ DO NOT use markdown in the output. Just raw JSON.`
                 if (quotes.length > 0) {
                     formattedResponse += `**Context (${targetLang.toUpperCase()}):**\n`;
                     for (const quote of quotes) {
-                        const translatedQuote = await this.translationService.translate(quote, targetLang);
+                        const { translation: translatedQuote } = await this.translationService.translate(quote, targetLang, userId);
                         formattedResponse += `> ${quote}\n> *${translatedQuote}*\n\n`;
                     }
                 }
@@ -102,7 +104,7 @@ DO NOT use markdown in the output. Just raw JSON.`
         }
     }
 
-    async generateSessionSummary(sessionId: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[]; topics: string[] }> {
+    async generateSessionSummary(sessionId: string, userId?: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[]; topics: string[] }> {
         this.logger.log(`Generating summary for session: ${sessionId}`);
 
         // 1. Fetch Transcripts
@@ -112,7 +114,7 @@ DO NOT use markdown in the output. Just raw JSON.`
         }
 
         const fullText = transcripts
-            .map(t => `${t.speaker}: ${t.text}`)
+            .map((t: any) => `${t.speaker}: ${t.text}`)
             .join('\n');
 
         // 2. Construct Prompt
@@ -140,7 +142,7 @@ If there are no action items or decisions, return empty arrays.`
         ];
 
         // 3. Call LLM
-        const settings = await this.settingsService.getRawSettings('demo-user');
+        const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const llmConfig = settings.llm || {};
         const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
 
@@ -166,14 +168,14 @@ If there are no action items or decisions, return empty arrays.`
             const targetLang = settings.lingo?.preferredLanguage || 'en';
             if (targetLang !== 'en') {
                 this.logger.log(`Translating summary to ${targetLang}`);
-                summaryData.summary = await this.translationService.translate(summaryData.summary, targetLang);
+                summaryData.summary = await this.translationService.translate(summaryData.summary, targetLang, userId);
 
                 // Translate arrays
                 summaryData.actionItems = await Promise.all(
-                    (summaryData.actionItems || []).map((item: string) => this.translationService.translate(item, targetLang))
+                    (summaryData.actionItems || []).map((item: string) => this.translationService.translate(item, targetLang, userId))
                 );
                 summaryData.keyDecisions = await Promise.all(
-                    (summaryData.keyDecisions || []).map((item: string) => this.translationService.translate(item, targetLang))
+                    (summaryData.keyDecisions || []).map((item: string) => this.translationService.translate(item, targetLang, userId))
                 );
             }
 
@@ -189,13 +191,13 @@ If there are no action items or decisions, return empty arrays.`
         }
     }
 
-    async extractConcepts(sessionId: string): Promise<any[]> {
+    async extractConcepts(sessionId: string, userId?: string): Promise<any[]> {
         this.logger.log(`Extracting concepts for session: ${sessionId}`);
 
         const transcripts = await this.transcriptService.getTranscripts(sessionId);
         if (!transcripts.length) return [];
 
-        const fullText = transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n');
+        const fullText = transcripts.map((t: any) => `${t.speaker}: ${t.text}`).join('\n');
 
         const messages: ChatMessage[] = [
             {
@@ -230,7 +232,7 @@ Return ONLY valid JSON. No markdown.`
             }
         ];
 
-        const settings = await this.settingsService.getRawSettings('demo-user');
+        const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const llmConfig = settings.llm || {};
         const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
 
@@ -249,8 +251,8 @@ Return ONLY valid JSON. No markdown.`
                 this.logger.log(`Translating ${concepts.length} concepts to ${targetLang}`);
                 for (const c of concepts) {
                     try {
-                        c.name_translated = await this.translationService.translate(c.name, targetLang);
-                        c.definition_translated = await this.translationService.translate(c.definition, targetLang);
+                        c.name_translated = await this.translationService.translate(c.name, targetLang, userId);
+                        c.definition_translated = await this.translationService.translate(c.definition, targetLang, userId);
                     } catch (e) {
                         this.logger.warn(`Failed to translate concept ${c.name}: ${e}`);
                     }
@@ -263,13 +265,13 @@ Return ONLY valid JSON. No markdown.`
         }
     }
 
-    async extractQA(sessionId: string): Promise<any[]> {
+    async extractQA(sessionId: string, userId?: string): Promise<any[]> {
         this.logger.log(`Extracting Q&A for session: ${sessionId}`);
 
         const transcripts = await this.transcriptService.getTranscripts(sessionId);
         if (!transcripts.length) return [];
 
-        const fullText = transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n');
+        const fullText = transcripts.map((t: any) => `${t.speaker}: ${t.text}`).join('\n');
 
         const messages: ChatMessage[] = [
             {
@@ -302,7 +304,7 @@ Return ONLY valid JSON. No markdown.`
             }
         ];
 
-        const settings = await this.settingsService.getRawSettings('demo-user');
+        const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const llmConfig = settings.llm || {};
         const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
 
@@ -321,8 +323,8 @@ Return ONLY valid JSON. No markdown.`
                 this.logger.log(`Translating ${qaPairs.length} QA pairs to ${targetLang}`);
                 for (const pair of qaPairs) {
                     try {
-                        if (pair.question) pair.question_translated = await this.translationService.translate(pair.question, targetLang);
-                        if (pair.answer) pair.answer_translated = await this.translationService.translate(pair.answer, targetLang);
+                        if (pair.question) pair.question_translated = await this.translationService.translate(pair.question, targetLang, userId);
+                        if (pair.answer) pair.answer_translated = await this.translationService.translate(pair.answer, targetLang, userId);
                     } catch (e) {
                         this.logger.warn(`Failed to translate QA pair: ${e}`);
                     }

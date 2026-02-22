@@ -22,6 +22,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     const [error, setError] = useState<string | null>(null);
     const [isPaused, setIsPaused] = useState(false);
     const isPausedRef = useRef(false);
+    const stoppedRef = useRef(false);
 
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -50,6 +51,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     const startCapture = useCallback(async (sourceId?: string) => {
         try {
             setError(null);
+            stoppedRef.current = false;
 
             let chromeMediaSourceId = sourceId;
 
@@ -124,6 +126,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             const MAX_MS = 20000;
 
             processor.onaudioprocess = e => {
+                if (stoppedRef.current) return;
                 if (isPausedRef.current) {
                     setAudioLevel(0);
                     return;
@@ -159,7 +162,7 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             };
 
             const flush = () => {
-                if (!audioChunks.length) return;
+                if (!audioChunks.length || stoppedRef.current) return;
 
                 // Merge chunks
                 const totalFrames = totalSamples;
@@ -197,12 +200,18 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     }, [monitorLevel, onAudioChunk]);
 
     const stopCapture = useCallback(() => {
-        processorRef.current?.disconnect();
+        stoppedRef.current = true;
+        if (processorRef.current) {
+            processorRef.current.onaudioprocess = null;
+            processorRef.current.disconnect();
+            processorRef.current = null;
+        }
         mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current = null;
         audioContextRef.current?.close();
+        audioContextRef.current = null;
         cancelAnimationFrame(animFrameRef.current);
         setIsCapturing(false);
-        setAudioLevel(0);
         setAudioLevel(0);
         setIsPaused(false);
         isPausedRef.current = false;
