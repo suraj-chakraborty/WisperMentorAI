@@ -181,6 +181,13 @@
     "5a68157c9613": "⚠️",
     "02d90efb7500": "Don't have an account?",
     "a8280d7c7cd5": "Create account",
-    "7cd5a35b17f3": "|"
+    "7cd5a35b17f3": "|",
+    "802d023eaec6": "←",
+    "5066c618933a": "Expand to Main Window",
+    "3d84eb89e635": "⤢",
+    "9490be63fa09": "No transcript yet. Start speaking to see text appear here.",
+    "fe48b514944c": "Hold <strong0>Spacebar</strong0> to ask by voice,<br0></br0>or type below.",
+    "97b322e32a9a": "⚠ {pttError}",
+    "cf823ef3ff5f": "v1.0.0"
   }
 }

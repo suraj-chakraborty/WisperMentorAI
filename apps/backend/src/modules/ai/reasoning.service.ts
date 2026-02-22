@@ -4,6 +4,7 @@ import { LlmService, ChatMessage } from './llm.service';
 import { SettingsService } from '../settings/settings.service';
 import { TranscriptService } from '../transcript/transcript.service';
 import { TranslationService } from '../translation/translation.service';
+import { RedisService } from '../cache/redis.service';
 
 @Injectable()
 export class ReasoningService {
@@ -14,18 +15,41 @@ export class ReasoningService {
         private readonly llmService: LlmService,
         private readonly settingsService: SettingsService,
         private readonly transcriptService: TranscriptService,
-        private readonly translationService: TranslationService
+        private readonly translationService: TranslationService,
+        private readonly redisService: RedisService
     ) { }
 
     async ask(question: string, sessionId: string, targetLang?: string, userId?: string): Promise<string> {
-        // ... (existing ask method) ...
         this.logger.log(`Reasoning about: "${question}"`);
 
-        // 1. Retrieve Context (RAG) - Filter by SessionId
-        const contextDocs = await this.memoryService.search(question, 25, sessionId);
-        const contextText = contextDocs
-            .map((doc: any) => `- ${doc.text}`)
-            .join('\n');
+        // Redis RAG Cache
+        const cacheKey = this.redisService.ragKey(sessionId, question + (targetLang || ''));
+        const cached = await this.redisService.get(cacheKey);
+        if (cached) {
+            this.logger.log(`⚡ [RAG CACHE HIT] "${question.substring(0, 40)}..."`);
+            return cached;
+        }
+        this.logger.debug(`[RAG CACHE MISS] "${question.substring(0, 40)}..."`);
+
+        // 1. Retrieve Context
+        const summaryKeywords = ['summarize', 'summerize', 'summary', 'recap', 'overview', 'what was discussed', 'what happened'];
+        const isSummaryRequest = summaryKeywords.some(k => question.toLowerCase().includes(k));
+
+        let contextText: string;
+        if (isSummaryRequest) {
+            // Summary request → fetch ALL transcripts from the session
+            this.logger.log(`📋 Summary request detected — fetching all transcripts for session ${sessionId}`);
+            const allTranscripts = await this.transcriptService.getTranscripts(sessionId);
+            contextText = allTranscripts
+                .map((t: any) => `- [${t.speaker}]: ${t.text}`)
+                .join('\n');
+        } else {
+            // Normal question → vector search (RAG)
+            const contextDocs = await this.memoryService.search(question, 25, sessionId);
+            contextText = contextDocs
+                .map((doc: any) => `- ${doc.text}`)
+                .join('\n');
+        }
 
         // 2. Get Tone/Style Examples
         const styleExamples = await this.memoryService.getStyleExamples(sessionId, 3);
@@ -33,7 +57,7 @@ export class ReasoningService {
             ? `\n\nAdopt the speaking style of the following examples:\n${styleExamples.map(e => `"${e}"`).join('\n')}`
             : '';
 
-        this.logger.debug(`Retrieved ${contextDocs.length} memories and ${styleExamples.length} style examples.`);
+        this.logger.debug(`Retrieved ${contextText.length} chars of context and ${styleExamples.length} style examples.`);
 
         const messages: ChatMessage[] = [
             {
@@ -87,6 +111,7 @@ DO NOT use markdown in the output. Just raw JSON.`
                         formattedResponse += `> ${quote}\n> *${translatedQuote}*\n\n`;
                     }
                 }
+                await this.cacheRagResponse(cacheKey, formattedResponse);
                 return formattedResponse;
             } else {
                 // Standard Output (No targetLang or English)
@@ -95,6 +120,7 @@ DO NOT use markdown in the output. Just raw JSON.`
                     formattedResponse += `**Context:**\n`;
                     quotes.forEach((q: string) => formattedResponse += `> > ${q}\n`);
                 }
+                await this.cacheRagResponse(cacheKey, formattedResponse);
                 return formattedResponse;
             }
 
@@ -102,6 +128,12 @@ DO NOT use markdown in the output. Just raw JSON.`
             this.logger.error(`Failed to parse Q&A JSON or Translate: ${e}`);
             return response; // Fallback to raw response
         }
+    }
+
+    /** Cache a RAG response */
+    private async cacheRagResponse(cacheKey: string, response: string): Promise<void> {
+        await this.redisService.set(cacheKey, response, 3600); // 1h TTL
+        this.logger.log(`📦 [RAG CACHED] (key: ${cacheKey})`);
     }
 
     async generateSessionSummary(sessionId: string, userId?: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[]; topics: string[] }> {

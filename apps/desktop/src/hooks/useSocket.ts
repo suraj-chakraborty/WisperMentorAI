@@ -29,6 +29,7 @@ interface UseSocketReturn {
     sendQuestion: (text: string, language?: string) => void;
     sendAudioChunk: (chunk: ArrayBuffer) => void;
     startNewSession: () => void;
+    startMeetingSession: (meetingTitle: string) => void;
     toggleTranslation: (enabled: boolean) => void;
 }
 
@@ -212,6 +213,30 @@ export function useSocket(token: string): UseSocketReturn {
         [sessionId],
     );
 
+    const startMeetingSession = useCallback(async (meetingTitle: string) => {
+        try {
+            const res = await fetch('http://127.0.0.1:3001/sessions/meeting', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ meetingTitle })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                joinSession(data.id);
+            } else {
+                console.error('Failed to create meeting session:', await res.text());
+                // Fallback to normal session
+                startNewSession();
+            }
+        } catch (e) {
+            console.error('Error creating meeting session', e);
+            startNewSession();
+        }
+    }, [joinSession, token, startNewSession]);
+
     const toggleTranslation = useCallback((enabled: boolean) => {
         if (!sessionId) return;
         socketRef.current?.emit('session:config', { sessionId, translate: enabled });
@@ -229,6 +254,7 @@ export function useSocket(token: string): UseSocketReturn {
         sendQuestion,
         sendAudioChunk,
         startNewSession,
+        startMeetingSession,
         toggleTranslation,
     };
 }

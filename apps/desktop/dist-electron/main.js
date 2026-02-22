@@ -34,7 +34,7 @@ function createMainWindow() {
     minWidth: 800,
     minHeight: 600,
     title: "WhisperMentor AI",
-    icon: path__namespace.join(VITE_PUBLIC, "logo-short.png"),
+    icon: path__namespace.join(VITE_PUBLIC, "logo.png"),
     frame: false,
     // Custom titlebar
     titleBarStyle: "hidden",
@@ -91,7 +91,7 @@ function toggleOverlay() {
   mainWindow.webContents.send("overlay:toggled", isOverlayMode);
 }
 function createTray() {
-  const iconPath = path__namespace.join(VITE_PUBLIC, "logo-short.png");
+  const iconPath = path__namespace.join(VITE_PUBLIC, "logo.png");
   const icon = electron.nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new electron.Tray(icon);
   const contextMenu = electron.Menu.buildFromTemplate([
@@ -159,20 +159,27 @@ function startMeetingDetection() {
     if (!mainWindow) return;
     try {
       const sources = await electron.desktopCapturer.getSources({ types: ["window"] });
-      const meetingApps = ["Zoom Meeting", "Microsoft Teams", "Meet - ", "Webex"];
+      const meetingPatterns = [
+        { match: "Zoom Meeting", appName: "Zoom" },
+        { match: "Microsoft Teams", appName: "Microsoft Teams" },
+        { match: "Meet - ", appName: "Google Meet" },
+        { match: "Webex", appName: "Webex" }
+      ];
       let detectedApp = null;
+      let detectedTitle = null;
       for (const source of sources) {
-        for (const app2 of meetingApps) {
-          if (source.name.includes(app2)) {
-            detectedApp = app2 === "Meet - " ? "Google Meet" : app2.replace(" Meeting", "");
+        for (const pattern of meetingPatterns) {
+          if (source.name.includes(pattern.match)) {
+            detectedApp = pattern.appName;
+            detectedTitle = source.name;
             break;
           }
         }
         if (detectedApp) break;
       }
-      if (detectedApp && detectedApp !== lastDetectedMeetingApp) {
-        lastDetectedMeetingApp = detectedApp;
-        mainWindow.webContents.send("meeting:detected", detectedApp);
+      if (detectedApp && detectedTitle && detectedTitle !== lastDetectedMeetingApp) {
+        lastDetectedMeetingApp = detectedTitle;
+        mainWindow.webContents.send("meeting:detected", detectedApp, detectedTitle);
         const { Notification } = require("electron");
         new Notification({
           title: "Meeting Detected",

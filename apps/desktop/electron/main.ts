@@ -21,7 +21,7 @@ function createMainWindow(): void {
         minWidth: 800,
         minHeight: 600,
         title: 'WhisperMentor AI',
-        icon: path.join(VITE_PUBLIC, 'logo-short.png'),
+        icon: path.join(VITE_PUBLIC, 'logo.png'),
         frame: false, // Custom titlebar
         titleBarStyle: 'hidden',
         webPreferences: {
@@ -95,7 +95,7 @@ function toggleOverlay(): void {
 // ─── System Tray ────────────────────────────────────────────────
 
 function createTray(): void {
-    const iconPath = path.join(VITE_PUBLIC, 'logo-short.png');
+    const iconPath = path.join(VITE_PUBLIC, 'logo.png');
     const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
     tray = new Tray(icon);
 
@@ -179,25 +179,31 @@ function startMeetingDetection() {
 
         try {
             const sources = await desktopCapturer.getSources({ types: ['window'] });
-            const meetingApps = ['Zoom Meeting', 'Microsoft Teams', 'Meet - ', 'Webex'];
+            const meetingPatterns = [
+                { match: 'Zoom Meeting', appName: 'Zoom' },
+                { match: 'Microsoft Teams', appName: 'Microsoft Teams' },
+                { match: 'Meet - ', appName: 'Google Meet' },
+                { match: 'Webex', appName: 'Webex' },
+            ];
 
             let detectedApp: string | null = null;
+            let detectedTitle: string | null = null;
 
             for (const source of sources) {
-                for (const app of meetingApps) {
-                    if (source.name.includes(app)) {
-                        detectedApp = app === 'Meet - ' ? 'Google Meet' : app.replace(' Meeting', '');
+                for (const pattern of meetingPatterns) {
+                    if (source.name.includes(pattern.match)) {
+                        detectedApp = pattern.appName;
+                        detectedTitle = source.name; // Full window title for unique hashing
                         break;
                     }
                 }
                 if (detectedApp) break;
             }
 
-            if (detectedApp && detectedApp !== lastDetectedMeetingApp) {
-                lastDetectedMeetingApp = detectedApp;
-                mainWindow.webContents.send('meeting:detected', detectedApp);
+            if (detectedApp && detectedTitle && detectedTitle !== lastDetectedMeetingApp) {
+                lastDetectedMeetingApp = detectedTitle;
+                mainWindow.webContents.send('meeting:detected', detectedApp, detectedTitle);
 
-                // Optional: Show System Notification
                 const { Notification } = require('electron');
                 new Notification({
                     title: 'Meeting Detected',
@@ -210,7 +216,7 @@ function startMeetingDetection() {
         } catch (error) {
             console.error('Error detecting meetings:', error);
         }
-    }, 5000); // Check every 5 seconds
+    }, 5000);
 }
 
 // ─── App Lifecycle ──────────────────────────────────────────────

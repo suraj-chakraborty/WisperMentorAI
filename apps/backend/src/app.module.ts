@@ -12,6 +12,7 @@ import { HttpModule } from '@nestjs/axios';
 import { TranscriptionService } from './transcription/transcription.service';
 import { SettingsModule } from './modules/settings/settings.module';
 import { TranslationModule } from './modules/translation/translation.module';
+import { CacheModule } from './modules/cache/cache.module';
 
 @Module({
     imports: [
@@ -25,6 +26,7 @@ import { TranslationModule } from './modules/translation/translation.module';
         HttpModule,
         SettingsModule,
         TranslationModule,
+        CacheModule,
     ],
     controllers: [AppController],
     providers: [

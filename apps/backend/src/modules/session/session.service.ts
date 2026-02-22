@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class SessionService implements OnModuleInit {
@@ -53,6 +54,42 @@ export class SessionService implements OnModuleInit {
         return this.prisma.session.create({
             data: {
                 mentorId,
+                startedAt: new Date(),
+            },
+        });
+    }
+
+    /**
+     * Create or join a meeting session using a deterministic ID derived from the meeting title.
+     * All participants in the same meeting (same window title) get the same session.
+     */
+    async createOrJoinMeetingSession(userId: string, meetingTitle: string) {
+        // Generate deterministic session ID from meeting title
+        const hash = createHash('sha256').update(meetingTitle.toLowerCase().trim()).digest('hex');
+        const meetingSessionId = `meeting_${hash.slice(0, 24)}`;
+
+        this.logger.log(`🔗 Meeting session: "${meetingTitle}" → ${meetingSessionId}`);
+
+        // Ensure user exists
+        await this.prisma.user.upsert({
+            where: { id: userId },
+            update: {},
+            create: {
+                id: userId,
+                email: `${userId}@example.com`,
+                name: 'Demo User',
+                password: 'demo_password_hash_placeholder',
+                settings: {},
+            },
+        });
+
+        // Upsert: create if first participant, return existing if someone joined earlier
+        return this.prisma.session.upsert({
+            where: { id: meetingSessionId },
+            update: {},  // Don't overwrite — just return the existing session
+            create: {
+                id: meetingSessionId,
+                mentorId: userId,
                 startedAt: new Date(),
             },
         });

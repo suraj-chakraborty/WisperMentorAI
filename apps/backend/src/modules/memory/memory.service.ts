@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import * as http from 'http';
 import { int } from 'neo4j-driver';
+import { RedisService } from '../cache/redis.service';
 
 @Injectable()
 export class MemoryService implements OnModuleInit {
@@ -15,7 +16,8 @@ export class MemoryService implements OnModuleInit {
     constructor(
         private readonly neo4jService: Neo4jService,
         private readonly httpService: HttpService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly redisService: RedisService
     ) {
         this.aiServiceUrl = this.configService.get<string>('AI_SERVICE_URL') || 'http://127.0.0.1:8000';
         this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: true });
@@ -165,7 +167,7 @@ export class MemoryService implements OnModuleInit {
                     MERGE (con)-[:HAS_RULE]->(r)
                 )
 
-                WITH c, con, sessionId
+                WITH c, con
                 UNWIND c.related_concepts as related
                 MERGE (rel:Concept {name: related})
                 MERGE (con)-[:RELATED_TO]->(rel)
@@ -233,14 +235,24 @@ export class MemoryService implements OnModuleInit {
     }
 
     private async getEmbedding(text: string): Promise<number[]> {
+        // Redis Embedding Cache
+        const cacheKey = this.redisService.embeddingKey(text);
+        const cached = await this.redisService.get(cacheKey);
+        if (cached) {
+            this.logger.debug(`⚡ [EMBED CACHE HIT] "${text.substring(0, 30)}..."`);
+            return JSON.parse(cached);
+        }
+
         try {
             const { data } = await firstValueFrom(
                 this.httpService.post(`${this.aiServiceUrl}/embed`, { text }, { timeout: 60000 })
             );
+            // Cache embedding for 48h (embeddings are deterministic)
+            await this.redisService.set(cacheKey, JSON.stringify(data.embedding), 172800);
+            this.logger.debug(`📦 [EMBED CACHED] "${text.substring(0, 30)}..."`);
             return data.embedding;
         } catch (error) {
             this.logger.error(`Embedding failed: ${error}`);
-            // Return empty or throw? Empty for now to convert to null or handle gracefully
             return [];
         }
     }
