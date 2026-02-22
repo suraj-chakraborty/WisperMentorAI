@@ -11,11 +11,11 @@ export function TitleBar({ isOverlay }: TitleBarProps) {
     return (
         <div className="titlebar" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
             <div className="titlebar__brand">
-                <img src="/logo-short.png" alt="WM" className="titlebar__logo" />
+                <img src="/logo.png" alt="WM" width={100} height={100} className="titlebar__logo" />
                 <span className="titlebar__title">WhisperMentor AI</span>
-                <span className="titlebar__version">v0.1.0</span>
+                <span className="titlebar__version">v1.0.0</span>
             </div>
-            <div className="titlebar__controls" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <div className="titlebar__controls" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
                 <button
                     className="titlebar__btn"
                     onClick={() => window.electronAPI?.minimizeWindow()}

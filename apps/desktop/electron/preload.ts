@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onToggleMic: (callback: () => void) => {
         ipcRenderer.on('mic:toggle', () => callback());
     },
-    onMeetingDetected: (callback: (appName: string) => void) => {
-        ipcRenderer.on('meeting:detected', (_event, appName) => callback(appName));
+    onMeetingDetected: (callback: (appName: string, meetingTitle: string) => void) => {
+        ipcRenderer.on('meeting:detected', (_event, appName, meetingTitle) => callback(appName, meetingTitle));
     },
 
     // Audio capture

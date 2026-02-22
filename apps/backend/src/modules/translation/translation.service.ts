@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { LlmService } from '../ai/llm.service';
 import { SettingsService } from '../settings/settings.service';
+import { RedisService } from '../cache/redis.service';
 
 import { LingoDotDevEngine } from 'lingo.dev/sdk';
 
@@ -19,12 +20,22 @@ export class TranslationService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         private readonly llmService: LlmService,
-        private readonly settingsService: SettingsService
+        private readonly settingsService: SettingsService,
+        private readonly redisService: RedisService
     ) { }
 
     async translate(text: string, targetLang: string, userId?: string): Promise<{ translation: string; warning?: string }> {
         if (!text || !text.trim()) return { translation: '' };
         if (!targetLang) return { translation: text };
+
+        // Redis Cache Check
+        const cacheKey = this.redisService.translationKey(text, targetLang);
+        const cached = await this.redisService.get(cacheKey);
+        if (cached) {
+            this.logger.log(`⚡ [CACHE HIT] "${text.substring(0, 30)}..." -> ${targetLang}`);
+            return { translation: cached };
+        }
+        this.logger.debug(`[CACHE MISS] "${text.substring(0, 30)}..." -> ${targetLang}`);
 
         const now = Date.now();
         const isDegraded = now < this.degradedUntil;
@@ -74,6 +85,7 @@ export class TranslationService {
         // 2. LLM Fallback (Gemini/Ollama)
         try {
             const translation = await this.translateWithLlm(text, targetLang, settings);
+            await this.cacheTranslation(text, targetLang, translation);
             return { translation };
         } catch (error: any) {
             this.logger.warn(`LLM fallback failed, falling back to Local AI: ${error.message}`);
@@ -81,20 +93,33 @@ export class TranslationService {
 
         // 3. Local AI Fallback (Port 8000)
         try {
-            return await this.translateWithLocalAi(text);
+            const result = await this.translateWithLocalAi(text);
+            if (result.translation && result.translation !== text) {
+                await this.cacheTranslation(text, targetLang, result.translation);
+            }
+            return result;
         } catch (error: any) {
             this.logger.error(`❌ All translation fallbacks failed: ${error.message}. Returning original text.`);
             return { translation: text, warning: "Translation Unavailable (All providers failed)" };
         }
     }
 
+    /** Cache a successful translation result */
+    private async cacheTranslation(text: string, targetLang: string, translation: string): Promise<void> {
+        const cacheKey = this.redisService.translationKey(text, targetLang);
+        await this.redisService.set(cacheKey, translation, 86400); // 24h TTL
+        this.logger.log(`📦 [CACHED] "${text.substring(0, 30)}..." -> ${targetLang} (key: ${cacheKey})`);
+    }
+
     private async translateWithLingo(text: string, targetLang: string, apiKey: string): Promise<string> {
         const lingo = new LingoDotDevEngine({ apiKey });
-        return await lingo.localizeText(text, {
+        const result = await lingo.localizeText(text, {
             sourceLocale: 'en',
             targetLocale: targetLang,
-            fast: true // Prioritize speed for real-time transcription
+            fast: true
         });
+        await this.cacheTranslation(text, targetLang, result);
+        return result;
     }
 
     private async translateWithLocalAi(text: string): Promise<{ translation: string; warning?: string }> {
