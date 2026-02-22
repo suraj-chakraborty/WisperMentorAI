@@ -7,49 +7,154 @@ export const SignupPage: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitch
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
+        setLoading(true);
         try {
             await register(email, password, name);
         } catch (err: any) {
-            setError('Registration failed. Email might be taken.');
+            setError('Registration failed. This email may already be in use.');
+        } finally {
+            setLoading(false);
         }
     };
 
     return (
-        <div className="auth-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column' }}>
-            <h2>Create Account</h2>
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '300px' }}>
-                <input
-                    type="text"
-                    placeholder="Name"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    className="input"
-                />
-                <input
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="input"
-                    required
-                />
-                <input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="input"
-                    required
-                />
-                {error && <p style={{ color: 'red' }}>{error}</p>}
-                <button type="submit" className="btn btn--primary">Sign Up</button>
-            </form>
-            <p style={{ marginTop: '1rem' }}>
-                Already have an account? <button onClick={onSwitchToLogin} style={{ background: 'none', border: 'none', color: '#646cff', cursor: 'pointer' }}>Login</button>
-            </p>
+        <div className="auth-page">
+            {/* Animated background orbs */}
+            <div className="auth-bg">
+                <div className="auth-bg__orb auth-bg__orb--1" />
+                <div className="auth-bg__orb auth-bg__orb--2" />
+                <div className="auth-bg__orb auth-bg__orb--3" />
+            </div>
+
+            <div className="auth-layout">
+                {/* Left Hero Panel */}
+                <div className="auth-hero">
+                    <div className="auth-hero__content">
+                        <div className="auth-hero__logo">🎧</div>
+                        <h1 className="auth-hero__title">WisperMentor</h1>
+                        <p className="auth-hero__tagline">
+                            Start your journey with AI-powered mentorship and real-time knowledge capture
+                        </p>
+                        <div className="auth-hero__features">
+                            <div className="auth-hero__feature">
+                                <span className="auth-hero__feature-icon">🎙️</span>
+                                <span>Real-time transcription</span>
+                            </div>
+                            <div className="auth-hero__feature">
+                                <span className="auth-hero__feature-icon">🧠</span>
+                                <span>AI-powered insights</span>
+                            </div>
+                            <div className="auth-hero__feature">
+                                <span className="auth-hero__feature-icon">📊</span>
+                                <span>Knowledge graphs</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Form Panel */}
+                <div className="auth-form-panel">
+                    <div className="auth-card">
+                        <div className="auth-card__header">
+                            <h2 className="auth-card__title">Create your account</h2>
+                            <p className="auth-card__subtitle">Join WisperMentor and unlock AI-powered learning</p>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="auth-form">
+                            <div className="auth-field">
+                                <label className="auth-field__label" htmlFor="signup-name">Full Name</label>
+                                <div className="auth-field__input-wrap">
+                                    <span className="auth-field__icon">👤</span>
+                                    <input
+                                        id="signup-name"
+                                        type="text"
+                                        placeholder="John Doe"
+                                        value={name}
+                                        onChange={e => setName(e.target.value)}
+                                        className="auth-field__input"
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="auth-field">
+                                <label className="auth-field__label" htmlFor="signup-email">Email</label>
+                                <div className="auth-field__input-wrap">
+                                    <span className="auth-field__icon">✉️</span>
+                                    <input
+                                        id="signup-email"
+                                        type="email"
+                                        placeholder="you@example.com"
+                                        value={email}
+                                        onChange={e => setEmail(e.target.value)}
+                                        className="auth-field__input"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="auth-field">
+                                <label className="auth-field__label" htmlFor="signup-password">Password</label>
+                                <div className="auth-field__input-wrap">
+                                    <span className="auth-field__icon">🔒</span>
+                                    <input
+                                        id="signup-password"
+                                        type={showPassword ? 'text' : 'password'}
+                                        placeholder="Create a strong password"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        className="auth-field__input"
+                                        required
+                                    />
+                                    <button
+                                        type="button"
+                                        className="auth-field__toggle"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        tabIndex={-1}
+                                    >
+                                        {showPassword ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {error && (
+                                <div className="auth-error">
+                                    <span className="auth-error__icon">⚠️</span>
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
+                            <button
+                                type="submit"
+                                className="auth-submit"
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <span className="auth-submit__loader" />
+                                ) : (
+                                    'Create Account'
+                                )}
+                            </button>
+                        </form>
+
+                        <div className="auth-card__footer">
+                            <span>Already have an account?</span>
+                            <button
+                                onClick={onSwitchToLogin}
+                                className="auth-link"
+                            >
+                                Sign in
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };

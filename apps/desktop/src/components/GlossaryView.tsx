@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 
 interface Concept {
     name: string;
@@ -12,6 +13,7 @@ interface GlossaryViewProps {
 }
 
 export const GlossaryView: React.FC<GlossaryViewProps> = ({ sessionId }) => {
+    const { token } = useAuth();
     const [concepts, setConcepts] = useState<Concept[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -24,7 +26,9 @@ export const GlossaryView: React.FC<GlossaryViewProps> = ({ sessionId }) => {
                     ? `http://localhost:3001/sessions/${sessionId}/glossary`
                     : `http://localhost:3001/sessions/global/glossary`; // Backend might need global endpoint if desired, but for now we focus on session
 
-                const res = await fetch(url);
+                const res = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (res.ok) {
                     const data = await res.json();
                     setConcepts(data);

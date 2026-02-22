@@ -1,9 +1,12 @@
-import { Controller, Post, Get, Param, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Get, Param, NotFoundException, UseGuards, Request } from '@nestjs/common';
 import { SessionService } from './session.service';
 import { ReasoningService } from '../ai/reasoning.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MemoryService } from '../memory/memory.service';
 
+import { AuthGuard } from '@nestjs/passport';
+
+@UseGuards(AuthGuard('jwt'))
 @Controller('sessions')
 export class SessionsController {
     constructor(
@@ -19,21 +22,21 @@ export class SessionsController {
     }
 
     @Post()
-    async createSession() {
-        // Use demo-user to match SettingsView
-        return this.sessionService.createSession('demo-user');
+    async createSession(@Request() req: any) {
+        return this.sessionService.createSession(req.user.userId);
     }
 
     @Post(':id/summarize')
-    async summarizeSession(@Param('id') id: string) {
+    async summarizeSession(@Param('id') id: string, @Request() req: any) {
         const session = await this.sessionService.getSession(id);
         if (!session) throw new NotFoundException('Session not found');
+        const userId = req.user.userId;
 
         // Run AI tasks in parallel to avoid timeout
-        const summaryPromise = this.reasoningService.generateSessionSummary(id);
-        const conceptsPromise = this.reasoningService.extractConcepts(id)
+        const summaryPromise = this.reasoningService.generateSessionSummary(id, userId);
+        const conceptsPromise = this.reasoningService.extractConcepts(id, userId)
             .then(concepts => this.memoryService.saveConcepts(id, concepts));
-        const qaPromise = this.reasoningService.extractQA(id)
+        const qaPromise = this.reasoningService.extractQA(id, userId)
             .then(qa => this.memoryService.saveQA(id, qa));
 
         const results = await Promise.allSettled([summaryPromise, conceptsPromise, qaPromise]);

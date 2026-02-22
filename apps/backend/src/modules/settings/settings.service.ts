@@ -21,7 +21,9 @@ export class SettingsService {
             };
         }
 
-        const settings = user.settings as any;
+        // Deep clone to avoid mutating Prisma cache — without this,
+        // getRawSettings() can return '********' instead of real keys
+        const settings = JSON.parse(JSON.stringify(user.settings || {}));
 
         // Mask API Key
         if (settings?.llm?.apiKey) {
@@ -99,6 +101,8 @@ export class SettingsService {
             where: { id: userId },
             select: { settings: true },
         });
-        return user?.settings as any || {};
+        const raw = user?.settings as any || {};
+        console.log(`🔑 [DEBUG] getRawSettings(${userId}): provider=${raw?.llm?.provider}, apiKey=${raw?.llm?.apiKey ? raw.llm.apiKey.slice(0, 8) + '...' : '(empty)'}, lingoKey=${raw?.lingo?.apiKey ? raw.lingo.apiKey.slice(0, 8) + '...' : '(empty)'}`);
+        return raw;
     }
 }

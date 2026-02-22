@@ -8,9 +8,10 @@ interface DashboardProps {
     onStartSession: () => void;
     onResumeSession: (id: string) => void;
     onNavigate: (page: string) => void;
+    token: string;
 }
 
-export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onResumeSession, onNavigate }: DashboardProps) {
+export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onResumeSession, onNavigate, token }: DashboardProps) {
     const [sessions, setSessions] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(false);
 
@@ -21,7 +22,9 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
 
     const fetchSessions = async () => {
         try {
-            const res = await fetch('http://localhost:3001/sessions');
+            const res = await fetch('http://localhost:3001/sessions', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setSessions(data);
@@ -34,7 +37,10 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
     const handleGenerateSummary = async (id: string) => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:3001/sessions/${id}/summarize`, { method: 'POST' });
+            const res = await fetch(`http://localhost:3001/sessions/${id}/summarize`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
                 await fetchSessions(); // Refresh to show new summary
             }

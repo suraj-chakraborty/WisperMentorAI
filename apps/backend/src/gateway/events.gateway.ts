@@ -96,7 +96,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             const history = await this.transcriptService.getTranscripts(data.sessionId);
             client.emit('session:history', {
                 sessionId: data.sessionId,
-                transcripts: history.map(t => ({
+                transcripts: history.map((t: any) => ({
                     id: t.id,
                     speaker: t.speaker,
                     text: t.text,
@@ -176,7 +176,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('answer:thinking', { question: data.text });
 
         try {
-            const answer = await this.reasoningService.ask(data.text, data.sessionId, data.language);
+            const answer = await this.reasoningService.ask(data.text, data.sessionId, data.language, client.data.user?.userId || client.data.user?.sub);
 
             client.emit('answer:response', {
                 questionId: `q_${Date.now()}`,

@@ -22,7 +22,7 @@ export class TranslationService {
         private readonly settingsService: SettingsService
     ) { }
 
-    async translate(text: string, targetLang: string): Promise<{ translation: string; warning?: string }> {
+    async translate(text: string, targetLang: string, userId?: string): Promise<{ translation: string; warning?: string }> {
         if (!text || !text.trim()) return { translation: '' };
         if (!targetLang) return { translation: text };
 
@@ -30,8 +30,10 @@ export class TranslationService {
         const isDegraded = now < this.degradedUntil;
 
         // Fetch user settings
-        const settings = await this.settingsService.getRawSettings('demo-user');
+        const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const lingoConfig = settings?.lingo || {};
+        const llmConfig = settings?.llm || {};
+        this.logger.log(`🔑 [DEBUG] translate() userId=${userId || 'demo-user'}, lingoApiKey=${lingoConfig.apiKey ? lingoConfig.apiKey.slice(0, 8) + '...' : '(empty)'}, llmProvider=${settings?.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama')}, llmApiKey=${llmConfig.apiKey ? llmConfig.apiKey.slice(0, 8) + '...' : '(empty)'}`);
 
         // Use user's key first
         const userApiKey = lingoConfig.apiKey;

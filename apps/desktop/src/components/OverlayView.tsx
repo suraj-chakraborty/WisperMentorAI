@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TranscriptEntry, AnswerEntry } from '../hooks/useSocket';
+import { usePushToTalk } from '../hooks/usePushToTalk';
 
 interface OverlayViewProps {
     transcripts: TranscriptEntry[];
@@ -15,6 +16,16 @@ export function OverlayView({ transcripts, answers, onSendQuestion, onToggleOver
     const feedEndRef = useRef<HTMLDivElement>(null);
     const siriVideoRef = useRef<HTMLVideoElement>(null);
     const waveVideoRef = useRef<HTMLVideoElement>(null);
+
+    // Push-to-Talk for voice questions
+    const { isListening: isPttListening, transcript: pttTranscript, error: pttError } = usePushToTalk({
+        onComplete: (text) => {
+            onSendQuestion(text);
+            // Auto-switch to Q&A view to show the answer
+            if (viewMode !== 'qa') setViewMode('qa');
+        },
+        activationKey: 'Space'
+    });
 
     // Auto-scroll
     useEffect(() => {
@@ -59,33 +70,6 @@ export function OverlayView({ transcripts, answers, onSendQuestion, onToggleOver
     // Map 0-100 to 1.0 - 1.5
     const scale = 1 + (audioLevel / 200);
 
-    const renderHeader = (title: string, onBack?: () => void) => (
-        <div className="overlay__header" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {onBack && (
-                    <button
-                        className="overlay__icon-btn"
-                        onClick={onBack}
-                        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                    >
-                        ←
-                    </button>
-                )}
-                <span className="overlay__title">{title}</span>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                    className="overlay__icon-btn"
-                    onClick={onToggleOverlay}
-                    title="Expand to Main Window"
-                    style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                >
-                    ⤢
-                </button>
-            </div>
-        </div>
-    );
-
     // ── Mini Mode (Siri Animation) ──
     if (viewMode === 'mini') {
         return (
@@ -121,8 +105,8 @@ export function OverlayView({ transcripts, answers, onSendQuestion, onToggleOver
                         playsInline
                         style={{
                             position: 'absolute',
-                            width: '40vh',     // Dynamic based on viewport height
-                            height: '40vh',    // Keep aspect ratio
+                            width: '40vh',
+                            height: '40vh',
                             minWidth: '200px',
                             minHeight: '200px',
                             objectFit: 'contain',
@@ -141,9 +125,9 @@ export function OverlayView({ transcripts, answers, onSendQuestion, onToggleOver
                         playsInline
                         style={{
                             position: 'absolute',
-                            width: '100%',     // Full Width
-                            height: '100%',    // Cover container
-                            objectFit: 'cover', // Fill the space
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
                             mixBlendMode: 'screen',
                             pointerEvents: 'none',
                             opacity: audioLevel > 5 ? 1 : 0,
@@ -180,11 +164,37 @@ export function OverlayView({ transcripts, answers, onSendQuestion, onToggleOver
     if (viewMode === 'transcript') {
         return (
             <div className="overlay">
-                {renderHeader('Transcript', () => setViewMode('mini'))}
+                <div className="overlay__header" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                            className="overlay__icon-btn"
+                            onClick={() => setViewMode('mini')}
+                            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                        >
+                            ←
+                        </button>
+                        <span className="overlay__title">Transcript</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                            className="overlay__icon-btn"
+                            onClick={onToggleOverlay}
+                            title="Expand to Main Window"
+                            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                        >
+                            ⤢
+                        </button>
+                    </div>
+                </div>
                 <div className="overlay__feed">
+                    {transcripts.length === 0 && (
+                        <div className="overlay__empty">
+                            No transcript yet. Start speaking to see text appear here.
+                        </div>
+                    )}
                     {transcripts.map((t, i) => (
-                        <div key={`t - ${i} `} className="overlay__line">
-                            <span className={`overlay__speaker ${t.speaker === 'You' ? 'overlay__speaker--you' : 'overlay__speaker--ai'} `}>
+                        <div key={`t-${i}`} className="overlay__line">
+                            <span className={`overlay__speaker ${t.speaker === 'You' ? 'overlay__speaker--you' : 'overlay__speaker--ai'}`}>
                                 {t.speaker}:
                             </span>
                             <span className="overlay__text">{t.text}</span>
@@ -199,26 +209,59 @@ export function OverlayView({ transcripts, answers, onSendQuestion, onToggleOver
     // ── Q&A Mode ──
     return (
         <div className="overlay">
-            {renderHeader('Q&A', () => setViewMode('mini'))}
+            <div className="overlay__header" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                        className="overlay__icon-btn"
+                        onClick={() => setViewMode('mini')}
+                        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                    >
+                        ←
+                    </button>
+                    <span className="overlay__title">Q&A</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                        className="overlay__icon-btn"
+                        onClick={onToggleOverlay}
+                        title="Expand to Main Window"
+                        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                    >
+                        ⤢
+                    </button>
+                </div>
+            </div>
             <div className="overlay__feed">
                 {answers.length === 0 && (
                     <div className="overlay__empty">
-                        Ask a question to get started.
+                        Hold <strong>Spacebar</strong> to ask by voice,<br />or type below.
                     </div>
                 )}
                 {answers.map((a, i) => (
-                    <div key={`q - ${i} `} className="overlay__qa-item">
+                    <div key={`q-${i}`} className="overlay__qa-item">
                         <div className="overlay__q">Q: {a.question}</div>
                         <div className="overlay__a">A: {a.text}</div>
                     </div>
                 ))}
                 <div ref={feedEndRef} />
             </div>
+            {/* PTT Indicator */}
+            {isPttListening && (
+                <div className="overlay__ptt-bar">
+                    <span className="overlay__ptt-dot" />
+                    <span>{pttTranscript || 'Listening… release Spacebar to send'}</span>
+                </div>
+            )}
+            {pttError && (
+                <div className="overlay__ptt-bar overlay__ptt-bar--error">
+                    <span>⚠ {pttError}</span>
+                </div>
+            )}
             <form className="overlay__input" onSubmit={handleSubmit}>
                 <input
                     type="text"
                     className="overlay__input-field"
-                    placeholder="Ask Mentor..."
+                    placeholder={isPttListening ? '🎤 Listening...' : 'Ask Mentor… (or hold Spacebar)'}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     autoFocus

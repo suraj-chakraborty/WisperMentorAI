@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
 // import ForceGraph2D from 'react-force-graph-2d';
 
 interface Node {
@@ -26,6 +27,7 @@ interface KnowledgeGraphViewProps {
 }
 
 export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ sessionId }) => {
+    const { token } = useAuth();
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     const [loading, setLoading] = useState(true);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -51,7 +53,9 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ sessionI
             if (!sessionId) return;
             setLoading(true);
             try {
-                const res = await fetch(`http://localhost:3001/sessions/${sessionId}/graph`);
+                const res = await fetch(`http://localhost:3001/sessions/${sessionId}/graph`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (res.ok) {
                     const graphData = await res.json();
                     setData(graphData);

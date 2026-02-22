@@ -1,5 +1,5 @@
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Neo4jService } from './neo4j.service';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -8,7 +8,7 @@ import * as http from 'http';
 import { int } from 'neo4j-driver';
 
 @Injectable()
-export class MemoryService {
+export class MemoryService implements OnModuleInit {
     private readonly logger = new Logger(MemoryService.name);
     private readonly aiServiceUrl: string;
 
@@ -19,6 +19,43 @@ export class MemoryService {
     ) {
         this.aiServiceUrl = this.configService.get<string>('AI_SERVICE_URL') || 'http://127.0.0.1:8000';
         this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: true });
+    }
+
+    async onModuleInit() {
+        await this.ensureVectorIndex();
+    }
+
+    private async ensureVectorIndex() {
+        const session = this.neo4jService.getSession();
+        try {
+            // Check if index already exists
+            const result = await session.run(`SHOW INDEXES WHERE name = 'transcript_embeddings'`);
+            if (result.records.length > 0) {
+                this.logger.log('✅ Vector index "transcript_embeddings" already exists');
+                return;
+            }
+
+            // Create the vector index (384 dimensions for sentence-transformers)
+            await session.run(`
+                CALL db.index.vector.createNodeIndex(
+                    'transcript_embeddings',
+                    'Transcript',
+                    'embedding',
+                    384,
+                    'cosine'
+                )
+            `);
+            this.logger.log('✅ Created vector index "transcript_embeddings" (384-dim, cosine)');
+        } catch (error: any) {
+            // Index might already exist (race condition) or Neo4j version doesn't support it
+            if (error.message?.includes('already exists')) {
+                this.logger.log('✅ Vector index "transcript_embeddings" already exists');
+            } else {
+                this.logger.error(`Failed to create vector index: ${error.message}`);
+            }
+        } finally {
+            await session.close();
+        }
     }
 
     async saveTranscript(sessionId: string, text: string, speaker: string = 'User', language: string = 'en') {
