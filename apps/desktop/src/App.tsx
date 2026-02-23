@@ -25,6 +25,9 @@ function AuthenticatedApp({ token }: { token: string }) {
     const [meetingAlertApp, setMeetingAlertApp] = useState<string | null>(null);
     const [meetingAlertTitle, setMeetingAlertTitle] = useState<string | null>(null);
 
+    // Lifted translation state so it survives SessionView unmount/remount
+    const [translationData, setTranslationData] = useState<Record<number, { text: string; warning?: string }>>({});
+
     // Sync app language on boot
     useEffect(() => {
         fetch('http://127.0.0.1:3001/settings', {
@@ -202,6 +205,8 @@ function AuthenticatedApp({ token }: { token: string }) {
                             isPaused={isPaused}
                             togglePause={togglePause}
                             token={token}
+                            translationData={translationData}
+                            setTranslationData={setTranslationData}
                         />
                     )}
                     {activePage === 'settings' && (
