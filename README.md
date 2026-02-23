@@ -23,6 +23,23 @@ WhisperMentor turns every meeting into a live, interactive knowledge base.
 - **Multilingual:** Real-time translation to 100+ languages via Lingo.dev with Redis caching to save credits.
 - **Smart Caching:** Redis caches translations, embeddings, RAG responses, and summaries — instant repeat lookups.
 
+## UI Screenshots
+
+### Login
+![Login Page](apps/desktop/public/login.jpg)
+
+### Sign Up
+![Sign Up Page](apps/desktop/public/signup.jpg)
+
+### Dashboard
+![Dashboard](apps/desktop/public/dashboard.jpg)
+
+### Active Session
+![Active Session](apps/desktop/public/active-session.jpg)
+
+### Overlay Mode
+![Overlay Mode](apps/desktop/public/overlay.jpg)
+
 ## Project Structure
 We are using a monorepo setup for tight integration between the desktop client and the reasoning backend.
 
@@ -132,3 +149,141 @@ We have integrated **Lingo.dev** as the primary translation provider with a mult
 
 ## License
 Distributed under the MIT License.
+
+---
+
+## Minimum Requirements
+
+| Component       | Requirement                                    |
+|-----------------|------------------------------------------------|
+| **OS**          | Windows 10/11, macOS 12+, or Linux (x64)       |
+| **Node.js**     | v18.0.0 or higher                               |
+| **npm**         | v9.0.0 or higher                                |
+| **Python**      | 3.10 or higher                                  |
+| **Docker**      | Docker Desktop 4.x (for PostgreSQL, Redis, Neo4j) |
+| **RAM**         | 8 GB minimum (16 GB recommended for AI models)  |
+| **Disk Space**  | ~4 GB (dependencies + Docker images + AI models)|
+| **GPU**         | Optional — Faster-Whisper can use CUDA for faster transcription |
+| **Microphone**  | Optional — Required only for mic input capture  |
+
+> **Note:** An active internet connection is required for LLM API calls (Gemini / OpenAI / Anthropic) and Lingo.dev translations. Ollama runs fully offline.
+
+---
+
+## Getting Started
+
+Follow these steps in order to go from a fresh clone to a fully running app.
+
+### Step 1 — Clone the Repository
+
+```bash
+git clone https://github.com/suraj-chakraborty/WisperMentorAI.git
+cd whispermentor-ai
+```
+
+### Step 2 — Start Infrastructure (Docker)
+
+you need to install PostgreSQL, Redis, and Neo4j with default settings in docker.
+
+
+Verify all three containers are healthy:
+
+
+### Step 3 — Configure Environment Variables
+
+Copy the template and fill in your API keys:
+
+```bash
+# From the project root
+cp .env.example .env
+```
+
+Edit `.env` and add your LLM API keys (at minimum one of Gemini / OpenAI / Anthropic / Ollama):
+
+```dotenv
+DATABASE_URL=postgresql://whispermentor:whispermentor_secret@localhost:5432/whispermentor_db?schema=public
+REDIS_HOST=localhost
+REDIS_PORT=6379
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=whispermentor_neo4j
+
+LINGODOTDEV_API_KEY=your_lingo_api_key
+# Add at least one LLM key for safety
+GEMINI_API_KEY=your_gemini_key
+# OPENAI_API_KEY=your_openai_key
+# ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+### Step 4 — Install Root Dependencies
+
+```bash
+# From the project root
+npm install
+```
+
+### Step 5 — Set Up the Backend (NestJS)
+
+```bash
+cd apps/backend
+npm install
+
+# Generate Prisma client
+npm run prisma:generate
+
+# Run database migrations
+npm run prisma:migrate
+
+# Start the backend in dev mode
+npm run start:dev
+```
+
+The backend will start on `http://127.0.0.1:3001`.
+
+### Step 6 — Start the AI Service (Python)
+
+Open a **new terminal** and run:
+
+**Windows (PowerShell):**
+if everything is installed properly then run this command 
+```powershell
+.\run-ai-service.ps1
+```
+
+**macOS / Linux:**
+```bash
+cd apps/ai-service
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+python -m uvicorn main:app --port 8000 --reload
+```
+
+The AI service will start on `http://127.0.0.1:8000`. On first run, it will download the Faster-Whisper model (~1 GB).
+
+### Step 7 — Launch the Desktop App (Electron + React)
+
+Open a **new terminal** and run:
+
+```bash
+cd apps/desktop
+npm install
+npm run electron:dev
+```
+
+The Electron app should open automatically. Create an account (Signup) and start a session!
+
+### Quick Checklist
+
+| Step | Command / Action | Expected Result |
+|------|------------------|-----------------|
+| 1 | `docker ps` | 3 containers running |
+| 2 | Backend terminal | `Nest application successfully started` |
+| 3 | AI service terminal | `Uvicorn running on http://127.0.0.1:8000` |
+| 4 | Desktop terminal | Electron window opens with Login page |
+| 5 | Sign up + Start session | Live transcription when audio is playing |
+
+---
+
+<p align="center"><b>created by <a href="https://suraj-chakraborty.netlify.app">suraj chakraborty</a>, if you like it please give a star ⭐</b></p>

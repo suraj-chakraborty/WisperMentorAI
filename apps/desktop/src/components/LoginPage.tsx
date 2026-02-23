@@ -35,8 +35,8 @@ export const LoginPage: React.FC<{ onSwitchToSignup: () => void }> = ({ onSwitch
                 {/* Left Hero Panel */}
                 <div className="auth-hero">
                     <div className="auth-hero__content">
-                        <div className="auth-hero__logo">🎧</div>
-                        <h1 className="auth-hero__title">WisperMentor</h1>
+                        <img className='auth-hero__logo' width={180} height={100} src="../../public/logo.png" alt="Logo" />
+                        <h1 className="auth-hero__title">WisperMentorAI</h1>
                         <p className="auth-hero__tagline">
                             Your AI-powered mentor for real-time learning and knowledge capture
                         </p>

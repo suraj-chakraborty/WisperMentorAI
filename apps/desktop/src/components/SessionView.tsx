@@ -8,6 +8,7 @@ import { usePushToTalk } from '../hooks/usePushToTalk';
 import { ttsService } from '../utils/TextToSpeechService';
 import { generateMarkdown, generateText, downloadFile } from '../utils/exportUtils';
 import { TypewriterText } from './TypewriterText';
+import { saveTranslations, loadTranslations } from '../hooks/useTranscriptCache';
 
 interface SessionViewProps {
     sessionId: string | null;
@@ -29,6 +30,8 @@ interface SessionViewProps {
     isPaused: boolean;
     togglePause: () => void;
     token: string;
+    translationData: Record<number, { text: string; warning?: string }>;
+    setTranslationData: React.Dispatch<React.SetStateAction<Record<number, { text: string; warning?: string }>>>;
 }
 
 export function SessionView({
@@ -51,6 +54,8 @@ export function SessionView({
     isPaused,
     togglePause,
     token,
+    translationData,
+    setTranslationData,
 }: SessionViewProps) {
     const [inputText, setInputText] = useState('');
     const [activeTab, setActiveTab] = useState<'transcript' | 'qa'>('transcript');
@@ -66,22 +71,35 @@ export function SessionView({
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [voiceEnabled, setVoiceEnabled] = useState(true);
 
-    // Track how many transcripts existed at mount to skip animation for history
-    const mountedTranscriptCountRef = useRef<number | null>(null);
+    // Track which transcript indices have already been animated.
+    // Once animated, they never re-animate — even after unmount/remount.
+    const animatedIndicesRef = useRef<Set<number>>(new Set());
+    // On mount, mark ALL existing transcripts as "already seen" so they
+    // render instantly (no typewriter). Only future transcripts animate.
     useEffect(() => {
-        if (mountedTranscriptCountRef.current === null && transcripts.length > 0) {
-            mountedTranscriptCountRef.current = transcripts.length;
+        for (let i = 0; i < transcripts.length; i++) {
+            animatedIndicesRef.current.add(i);
         }
-    }, [transcripts]);
-    // Also set to 0 on fresh mount with no transcripts
-    useEffect(() => {
-        if (mountedTranscriptCountRef.current === null) {
-            mountedTranscriptCountRef.current = 0;
-        }
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // intentionally empty deps — run once on mount only
 
-    // Translation State
-    const [translationData, setTranslationData] = useState<Record<number, { text: string; warning?: string }>>({});
+    // Load cached translations from localStorage on mount
+    useEffect(() => {
+        if (sessionId && Object.keys(translationData).length === 0) {
+            const cached = loadTranslations(sessionId);
+            if (cached && Object.keys(cached).length > 0) {
+                console.log(`⚡ Loaded cached translations for session ${sessionId}`);
+                setTranslationData(cached);
+                // Also mark cached translations as already animated
+                for (const key of Object.keys(cached)) {
+                    animatedIndicesRef.current.add(-Number(key) - 1);
+                }
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // run once on mount only
+
+    // Translation State — received from parent (lifted state)
     const [targetLang, setTargetLang] = useState('es');
     const translatingRef = useRef<Set<number>>(new Set());
 
@@ -116,8 +134,6 @@ export function SessionView({
         }
 
         const translateNew = async () => {
-            // Identify untranslated items. 
-            // We clone transcripts to avoid closure stale issues if needed, but transcripts is fresh from deps.
             const toTranslate = transcripts.map((t, i) => ({ t, i }))
                 .filter(({ t, i }) => !translationData[i] && !translatingRef.current.has(i) && t.text.trim());
 
@@ -135,10 +151,15 @@ export function SessionView({
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        setTranslationData(prev => ({
-                            ...prev,
-                            [i]: { text: data.translation, warning: data.warning }
-                        }));
+                        setTranslationData(prev => {
+                            const next = {
+                                ...prev,
+                                [i]: { text: data.translation, warning: data.warning }
+                            };
+                            // Persist to localStorage
+                            if (sessionId) saveTranslations(sessionId, next);
+                            return next;
+                        });
                     }
                 } catch (error) {
                     console.error('Translation error:', error);
@@ -487,17 +508,27 @@ export function SessionView({
                                         )}
                                     </span>
                                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                        {i >= (mountedTranscriptCountRef.current ?? transcripts.length)
-                                            ? <TypewriterText className="transcript-msg__text" text={t.text} speed={10} />
-                                            : <span className="transcript-msg__text">{t.text}</span>
-                                        }
+                                        {(() => {
+                                            // Check if this index was already animated
+                                            const alreadyAnimated = animatedIndicesRef.current.has(i);
+                                            if (!alreadyAnimated) {
+                                                // Will be animated now — mark it so it won't re-animate
+                                                animatedIndicesRef.current.add(i);
+                                                return <TypewriterText className="transcript-msg__text" text={t.text} speed={10} />;
+                                            }
+                                            return <span className="transcript-msg__text">{t.text}</span>;
+                                        })()}
                                         {isTranslationEnabled && translationData[i] &&
                                             translationData[i].text.replace(/[^\w]/g, '').toLowerCase() !== t.text.replace(/[^\w]/g, '').toLowerCase() && (
                                                 <div className="transcript-msg__translation mt-2 text-indigo-300 text-sm italic border-l-2 border-indigo-500 pl-2">
-                                                    {i >= (mountedTranscriptCountRef.current ?? transcripts.length)
-                                                        ? <TypewriterText text={translationData[i].text} speed={10} />
-                                                        : translationData[i].text
-                                                    }
+                                                    {(() => {
+                                                        const alreadyAnimated = animatedIndicesRef.current.has(-i - 1); // use negative indices for translations
+                                                        if (!alreadyAnimated) {
+                                                            animatedIndicesRef.current.add(-i - 1);
+                                                            return <TypewriterText text={translationData[i].text} speed={10} />;
+                                                        }
+                                                        return translationData[i].text;
+                                                    })()}
                                                     {translationData[i].warning && (
                                                         <div className="text-[10px] text-orange-400 mt-1 not-italic">
                                                             ⚠️ {translationData[i].warning}

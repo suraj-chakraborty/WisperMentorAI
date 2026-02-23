@@ -13,6 +13,7 @@ import { TranscriptionService } from '../transcription/transcription.service';
 import { TranscriptService } from '../modules/transcript/transcript.service';
 import { MemoryService } from '../modules/memory/memory.service';
 import { ReasoningService } from '../modules/ai/reasoning.service';
+import { RedisService } from '../modules/cache/redis.service';
 import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
@@ -33,7 +34,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         private readonly transcriptService: TranscriptService,
         private readonly memoryService: MemoryService,
         private readonly reasoningService: ReasoningService,
-        private readonly jwtService: JwtService
+        private readonly jwtService: JwtService,
+        private readonly redisService: RedisService,
     ) { }
 
     private sessionSettings = new Map<string, { translate: boolean }>();
@@ -91,19 +93,35 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             sessionId: data.sessionId,
         });
 
-        // Emit History (Context Backfill)
+        // Emit History — try Redis first (faster), fall back to Postgres
         try {
-            const history = await this.transcriptService.getTranscripts(data.sessionId);
-            client.emit('session:history', {
-                sessionId: data.sessionId,
-                transcripts: history.map((t: any) => ({
+            const cacheKey = this.redisService.transcriptKey(data.sessionId);
+            const cached = await this.redisService.lrange(cacheKey);
+
+            let transcripts: any[];
+            if (cached.length > 0) {
+                this.logger.log(`⚡ [TRANSCRIPT CACHE HIT] ${cached.length} entries for session ${data.sessionId}`);
+                transcripts = cached.map(raw => JSON.parse(raw));
+            } else {
+                this.logger.log(`[TRANSCRIPT CACHE MISS] session ${data.sessionId}, fetching from DB`);
+                const history = await this.transcriptService.getTranscripts(data.sessionId);
+                transcripts = history.map((t: any) => ({
                     id: t.id,
                     speaker: t.speaker,
                     text: t.text,
-                    timestamp: t.createdAt // Ensure Transcript model has createdAt
-                }))
+                    timestamp: t.createdAt
+                }));
+                // Backfill Redis cache from DB
+                for (const t of transcripts) {
+                    await this.redisService.rpush(cacheKey, JSON.stringify(t), 7200);
+                }
+            }
+
+            client.emit('session:history', {
+                sessionId: data.sessionId,
+                transcripts,
             });
-            this.logger.log(`📜 Sent ${history.length} transcripts to ${client.id}`);
+            this.logger.log(`📜 Sent ${transcripts.length} transcripts to ${client.id}`);
         } catch (error) {
             this.logger.error(`Failed to fetch history for ${data.sessionId}: ${error}`);
         }
@@ -156,6 +174,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 // Save to Postgres (Prisma) - Required for Dashboard & Summary
                 this.transcriptService.addTranscript(data.sessionId, result.speaker, result.text, result.language)
                     .catch(e => this.logger.error(`Failed to save transcript DB: ${e}`));
+
+                // Cache to Redis (2h TTL)
+                const transcriptEntry = {
+                    id: `t_${Date.now()}`,
+                    speaker: result.speaker,
+                    text: result.text,
+                    language: result.language,
+                    timestamp: new Date(),
+                };
+                const cacheKey = this.redisService.transcriptKey(data.sessionId);
+                this.redisService.rpush(cacheKey, JSON.stringify(transcriptEntry), 7200)
+                    .catch(e => this.logger.error(`Failed to cache transcript to Redis: ${e}`));
             }
         } catch (error: any) {
             this.logger.error(`Error processing audio chunk: ${error}`);

@@ -60,6 +60,27 @@ export class RedisService implements OnModuleDestroy {
         }
     }
 
+    /** Append an item to a Redis list and refresh its TTL */
+    async rpush(key: string, value: string, ttlSeconds: number = 7200): Promise<void> {
+        if (!this.isReady) return;
+        try {
+            await this.client.rpush(key, value);
+            await this.client.expire(key, ttlSeconds);
+        } catch {
+            // best-effort
+        }
+    }
+
+    /** Read all items from a Redis list */
+    async lrange(key: string): Promise<string[]> {
+        if (!this.isReady) return [];
+        try {
+            return await this.client.lrange(key, 0, -1);
+        } catch {
+            return [];
+        }
+    }
+
     /** Generate a cache key for translations */
     translationKey(text: string, targetLang: string): string {
         const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
@@ -81,5 +102,10 @@ export class RedisService implements OnModuleDestroy {
     /** Generate a cache key for session summaries */
     summaryKey(sessionId: string): string {
         return `summary:${sessionId}`;
+    }
+
+    /** Generate a cache key for transcript lists */
+    transcriptKey(sessionId: string): string {
+        return `transcript:${sessionId}`;
     }
 }

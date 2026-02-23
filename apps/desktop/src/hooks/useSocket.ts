@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { loadTranscripts, saveTranscripts, appendTranscript } from './useTranscriptCache';
 
 export interface TranscriptEntry {
     id: string;
@@ -35,10 +36,14 @@ interface UseSocketReturn {
 
 export function useSocket(token: string): UseSocketReturn {
     const socketRef = useRef<Socket | null>(null);
+    const sessionIdRef = useRef<string | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionStatus, setSessionStatus] = useState<string>('idle');
     const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
+    const transcriptsRef = useRef<TranscriptEntry[]>([]);
+    // Keep ref in sync with state so leaveSession (memoized) can read the latest
+    useEffect(() => { transcriptsRef.current = transcripts; }, [transcripts]);
     const [answers, setAnswers] = useState<AnswerEntry[]>([]);
     const [serverError, setServerError] = useState<string | null>(null);
 
@@ -87,24 +92,29 @@ export function useSocket(token: string): UseSocketReturn {
         });
 
         socket.on('transcript:update', (data: { id: string; speaker: string; text: string; language?: string }) => {
-            setTranscripts((prev) => [
-                ...prev,
-                {
-                    ...data,
-                    timestamp: new Date(),
-                },
-            ]);
+            const entry: TranscriptEntry = { ...data, timestamp: new Date() };
+            setTranscripts((prev) => {
+                const next = [...prev, entry];
+                return next;
+            });
+            // Persist to localStorage (uses sessionId from closure via ref)
+            if (sessionIdRef.current) {
+                appendTranscript(sessionIdRef.current, entry);
+            }
         });
 
         socket.on('session:history', (data: { sessionId: string; transcripts: any[] }) => {
             console.log("Received history:", data.transcripts.length);
-            setTranscripts(data.transcripts.map(t => ({
+            const mapped = data.transcripts.map(t => ({
                 id: t.id,
                 speaker: t.speaker,
                 text: t.text,
                 language: t.language,
                 timestamp: new Date(t.timestamp),
-            })));
+            }));
+            setTranscripts(mapped);
+            // Update localStorage cache with authoritative backend data
+            saveTranscripts(data.sessionId, mapped);
         });
 
         socket.on('answer:response', (data: { questionId: string; text: string; confidence: number }) => {
@@ -137,6 +147,13 @@ export function useSocket(token: string): UseSocketReturn {
     }, []);
 
     const joinSession = useCallback((id: string) => {
+        // Immediately load cached transcripts for instant display
+        const cached = loadTranscripts(id);
+        if (cached && cached.length > 0) {
+            console.log(`⚡ Loaded ${cached.length} cached transcripts for session ${id}`);
+            setTranscripts(cached);
+        }
+        sessionIdRef.current = id;
         socketRef.current?.emit('session:join', { sessionId: id });
         setSessionId(id);
         setServerError(null);
@@ -144,8 +161,14 @@ export function useSocket(token: string): UseSocketReturn {
 
     const leaveSession = useCallback(() => {
         if (sessionId) {
+            // Save final transcript state to localStorage before clearing
+            const currentTranscripts = transcriptsRef.current;
+            if (currentTranscripts.length > 0) {
+                saveTranscripts(sessionId, currentTranscripts);
+            }
             socketRef.current?.emit('session:leave', { sessionId });
             setSessionId(null);
+            sessionIdRef.current = null;
             setTranscripts([]);
             setAnswers([]);
             setSessionStatus('connected');

@@ -15,7 +15,7 @@ export function TitleBar({ isOverlay }: TitleBarProps) {
                 <span className="titlebar__title">WhisperMentor AI</span>
                 <span className="titlebar__version">v1.0.0</span>
             </div>
-            <div className="titlebar__controls" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+            <div className="titlebar__controls" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                 <button
                     className="titlebar__btn"
                     onClick={() => window.electronAPI?.minimizeWindow()}
