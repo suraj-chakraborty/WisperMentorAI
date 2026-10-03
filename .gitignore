@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+./read.md
+./brainstorm.md
+docker-compose.yml
+run-ai-service.ps1
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Electron
+release/
+
+# Prisma
+apps/backend/prisma/*.db
+apps/backend/prisma/migrations/
+apps/ai-service/Scripts*
+apps/ai-service/.venv/
+
+# Docker
+docker-data/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Temporary
+tmp/
+temp/
