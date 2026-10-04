@@ -17,6 +17,9 @@ declare global {
             stopAudioCapture: () => Promise<void>;
             onMessage: (channel: string, callback: (...args: unknown[]) => void) => void;
             removeListener: (channel: string) => void;
+            saveToken: (token: string) => Promise<boolean>;
+            getToken: () => Promise<string | null>;
+            clearToken: () => Promise<boolean>;
         };
     }
 }

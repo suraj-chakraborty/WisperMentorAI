@@ -16,6 +16,26 @@ interface UseAudioCaptureProps {
     onAudioChunk: (chunk: ArrayBuffer) => void;
 }
 
+const STEREO_WORKLET_CODE = `
+class StereoCaptureWorklet extends AudioWorkletProcessor {
+    process(inputs) {
+        const input = inputs[0];
+        if (input && input.length >= 2) {
+            const left = input[0];
+            const right = input[1];
+            if (left && right && left.length > 0) {
+                this.port.postMessage({
+                    left: new Float32Array(left),
+                    right: new Float32Array(right),
+                });
+            }
+        }
+        return true;
+    }
+}
+registerProcessor('stereo-capture-worklet', StereoCaptureWorklet);
+`;
+
 export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCaptureState {
     const [isCapturing, setIsCapturing] = useState(false);
     const [audioLevel, setAudioLevel] = useState(0);
@@ -28,11 +48,16 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const animFrameRef = useRef<number>(0);
-    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    const processorRef = useRef<AudioNode | null>(null);
 
     // context overlap (2s @ 16kHz)
     const lastTailRef = useRef<Float32Array>(new Float32Array(0));
     const OVERLAP_SAMPLES = 16000 * 2;
+
+    const onAudioChunkRef = useRef(onAudioChunk);
+    useEffect(() => {
+        onAudioChunkRef.current = onAudioChunk;
+    }, [onAudioChunk]);
 
     useEffect(() => () => stopCapture(), []);
 
@@ -109,12 +134,6 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             analyserRef.current = analyser;
             animFrameRef.current = requestAnimationFrame(monitorLevel);
 
-            // Processor (Stereo)
-            const bufferSize = 4096;
-            const processor = ctx.createScriptProcessor(bufferSize, 2, 2);
-            processorRef.current = processor;
-            merger.connect(processor);
-
             const sampleRate = ctx.sampleRate;
             let audioChunks: Float32Array[] = [];
             let totalSamples = 0;
@@ -124,42 +143,6 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             const SILENCE_THRESHOLD = 2;
             const SILENCE_MS = 2500;
             const MAX_MS = 20000;
-
-            processor.onaudioprocess = e => {
-                if (stoppedRef.current) return;
-                if (isPausedRef.current) {
-                    setAudioLevel(0);
-                    return;
-                }
-                // Get Stereo Data
-                const left = e.inputBuffer.getChannelData(0);
-                const right = e.inputBuffer.getChannelData(1);
-
-                // Interleave for processing/sending
-                const interleaved = new Float32Array(left.length * 2);
-                let sum = 0;
-                for (let i = 0; i < left.length; i++) {
-                    interleaved[i * 2] = left[i];
-                    interleaved[i * 2 + 1] = right[i];
-                    // RMS calculation (mono mix for VAD)
-                    const val = (left[i] + right[i]) / 2;
-                    sum += val * val;
-                }
-
-                audioChunks.push(interleaved);
-                totalSamples += left.length; // We count frames, not samples
-
-                const rms = Math.sqrt(sum / left.length);
-                const level = Math.min(100, Math.round(rms * 100 * 5)); // Boost level for visibility
-                setAudioLevel(level);
-
-                const now = Date.now();
-                if (level > SILENCE_THRESHOLD) lastSpeech = now;
-
-                if (now - startTime > MAX_MS || (now - lastSpeech > SILENCE_MS && now - startTime > 1000)) {
-                    flush();
-                }
-            };
 
             const flush = () => {
                 if (!audioChunks.length || stoppedRef.current) return;
@@ -173,13 +156,11 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
                     offset += c.length;
                 }
 
-                // Resample (Stereo Resampling is tricky. We'll restart with strict logic)
+                // Resample (Stereo Resampling)
                 const resampled = downsampleStereo(mergedStream, sampleRate, 16000);
                 console.log(`[Audio] Flush: ${mergedStream.length / 2} frames -> ${resampled.length / 2} frames (Stereo)`);
 
-                // We don't do context overlap here for simplification in stereo yet
-                // Just send the chunk
-                onAudioChunk(encodeWAVStereo(resampled, 16000));
+                onAudioChunkRef.current(encodeWAVStereo(resampled, 16000));
 
                 audioChunks = [];
                 totalSamples = 0;
@@ -187,9 +168,80 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
                 lastSpeech = Date.now();
             };
 
+            const handleAudioFrames = (left: Float32Array, right: Float32Array) => {
+                if (stoppedRef.current) return;
+                if (isPausedRef.current) {
+                    setAudioLevel(0);
+                    return;
+                }
+
+                // Interleave stereo for sending
+                const interleaved = new Float32Array(left.length * 2);
+                let sum = 0;
+                for (let i = 0; i < left.length; i++) {
+                    interleaved[i * 2] = left[i];
+                    interleaved[i * 2 + 1] = right[i];
+                    const val = (left[i] + right[i]) / 2;
+                    sum += val * val;
+                }
+
+                audioChunks.push(interleaved);
+                totalSamples += left.length;
+
+                const rms = Math.sqrt(sum / left.length);
+                const level = Math.min(100, Math.round(rms * 100 * 5));
+                setAudioLevel(level);
+
+                const now = Date.now();
+                if (level > SILENCE_THRESHOLD) lastSpeech = now;
+
+                if (now - startTime > MAX_MS || (now - lastSpeech > SILENCE_MS && now - startTime > 1000)) {
+                    flush();
+                }
+            };
+
+            // Processor (AudioWorklet preferred for offloading audio processing; fallback to ScriptProcessor)
+            let processorNode: AudioNode | null = null;
+
+            if (typeof AudioWorkletNode !== 'undefined' && ctx.audioWorklet) {
+                try {
+                    const blob = new Blob([STEREO_WORKLET_CODE], { type: 'application/javascript' });
+                    const workletUrl = URL.createObjectURL(blob);
+                    await ctx.audioWorklet.addModule(workletUrl);
+                    URL.revokeObjectURL(workletUrl);
+
+                    const worklet = new AudioWorkletNode(ctx, 'stereo-capture-worklet', {
+                        numberOfInputs: 1,
+                        numberOfOutputs: 1,
+                        outputChannelCount: [2],
+                    });
+                    worklet.port.onmessage = (event) => {
+                        const { left, right } = event.data;
+                        if (left && right) {
+                            handleAudioFrames(left, right);
+                        }
+                    };
+                    processorNode = worklet;
+                } catch (workletError) {
+                    console.warn('[Audio] AudioWorklet failed, using ScriptProcessor fallback:', workletError);
+                }
+            }
+
+            if (!processorNode) {
+                const bufferSize = 4096;
+                const scriptNode = ctx.createScriptProcessor(bufferSize, 2, 2);
+                scriptNode.onaudioprocess = (e) => {
+                    handleAudioFrames(e.inputBuffer.getChannelData(0), e.inputBuffer.getChannelData(1));
+                };
+                processorNode = scriptNode;
+            }
+
+            processorRef.current = processorNode;
+            merger.connect(processorNode);
+
             const mute = ctx.createGain();
             mute.gain.value = 0;
-            processor.connect(mute);
+            processorNode.connect(mute);
             mute.connect(ctx.destination);
 
             setIsCapturing(true);
@@ -197,12 +249,17 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
             console.error(e);
             setError(e.message || 'Audio capture failed');
         }
-    }, [monitorLevel, onAudioChunk]);
+    }, [monitorLevel]);
 
     const stopCapture = useCallback(() => {
         stoppedRef.current = true;
         if (processorRef.current) {
-            processorRef.current.onaudioprocess = null;
+            if ('onaudioprocess' in processorRef.current) {
+                (processorRef.current as any).onaudioprocess = null;
+            }
+            if ('port' in processorRef.current) {
+                (processorRef.current as any).port.onmessage = null;
+            }
             processorRef.current.disconnect();
             processorRef.current = null;
         }
@@ -291,20 +348,6 @@ export function useAudioCapture({ onAudioChunk }: UseAudioCaptureProps): AudioCa
 }
 
 // 🔊 Utils 
-
-function downsample(buffer: Float32Array, inRate: number, outRate: number) {
-    if (outRate === inRate) return buffer;
-    const ratio = inRate / outRate;
-    const newLen = Math.round(buffer.length / ratio);
-    const result = new Float32Array(newLen);
-    for (let i = 0; i < newLen; i++) {
-        const pos = i * ratio;
-        const idx = Math.floor(pos);
-        const frac = pos - idx;
-        result[i] = buffer[idx] * (1 - frac) + (buffer[idx + 1] || 0) * frac;
-    }
-    return result;
-}
 
 function downsampleStereo(buffer: Float32Array, inRate: number, outRate: number) {
     if (outRate === inRate) return buffer;

@@ -34,4 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeListener: (channel: string) => {
         ipcRenderer.removeAllListeners(channel);
     },
+
+    // Secure token storage (OS Keychain via safeStorage)
+    saveToken: (token: string) => ipcRenderer.invoke('auth:save-token', token),
+    getToken: () => ipcRenderer.invoke('auth:get-token'),
+    clearToken: () => ipcRenderer.invoke('auth:clear-token'),
 });

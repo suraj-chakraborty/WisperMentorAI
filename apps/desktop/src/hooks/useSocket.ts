@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { WsEvent } from '@whispermentor/shared';
+import { WS_BASE_URL, apiEndpoint } from '../config/api';
 
 export interface TranscriptEntry {
     id: string;
@@ -42,8 +44,14 @@ export function useSocket(token: string): UseSocketReturn {
     const [serverError, setServerError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!token) {
+            setIsConnected(false);
+            setSessionStatus('disconnected');
+            return;
+        }
+
         // Connect to Backend
-        const socket = io('http://127.0.0.1:3001', {
+        const socket = io(WS_BASE_URL, {
             auth: { token },
             transports: ['websocket'],
             reconnection: true,
@@ -78,14 +86,14 @@ export function useSocket(token: string): UseSocketReturn {
             setServerError(null);
         });
 
-        socket.on('session:status', (data: { status: string; sessionId?: string; message?: string }) => {
+        socket.on(WsEvent.SESSION_STATUS, (data: { status: string; sessionId?: string; message?: string }) => {
             setSessionStatus(data.status);
             if (data.sessionId) {
                 setSessionId(data.sessionId);
             }
         });
 
-        socket.on('transcript:update', (data: { id: string; speaker: string; text: string; language?: string }) => {
+        socket.on(WsEvent.TRANSCRIPT_UPDATE, (data: { id: string; speaker: string; text: string; language?: string }) => {
             setTranscripts((prev) => [
                 ...prev,
                 {
@@ -106,12 +114,32 @@ export function useSocket(token: string): UseSocketReturn {
             })));
         });
 
-        socket.on('answer:response', (data: { questionId: string; text: string; confidence: number }) => {
+        socket.on(WsEvent.ANSWER_CHUNK, (data: { questionId: string; chunk: string }) => {
             setAnswers((prev) => {
                 const newAnswers = [...prev];
                 const lastIdx = newAnswers.length - 1;
-                if (lastIdx >= 0 && !newAnswers[lastIdx].text) {
-                    newAnswers[lastIdx] = { ...newAnswers[lastIdx], text: data.text, confidence: data.confidence };
+                if (lastIdx >= 0) {
+                    newAnswers[lastIdx] = {
+                        ...newAnswers[lastIdx],
+                        text: (newAnswers[lastIdx].text || '') + data.chunk,
+                        questionId: data.questionId,
+                    };
+                }
+                return newAnswers;
+            });
+        });
+
+        socket.on(WsEvent.ANSWER_RESPONSE, (data: { questionId: string; text: string; confidence: number }) => {
+            setAnswers((prev) => {
+                const newAnswers = [...prev];
+                const lastIdx = newAnswers.length - 1;
+                if (lastIdx >= 0) {
+                    newAnswers[lastIdx] = {
+                        ...newAnswers[lastIdx],
+                        text: data.text,
+                        confidence: data.confidence,
+                        questionId: data.questionId,
+                    };
                 } else {
                     newAnswers.push({ ...data, question: '', timestamp: new Date(), questionId: data.questionId });
                 }
@@ -132,18 +160,19 @@ export function useSocket(token: string): UseSocketReturn {
 
         return () => {
             socket.disconnect();
+            socketRef.current = null;
         };
-    }, []);
+    }, [token]);
 
     const joinSession = useCallback((id: string) => {
-        socketRef.current?.emit('session:join', { sessionId: id });
+        socketRef.current?.emit(WsEvent.JOIN_SESSION, { sessionId: id });
         setSessionId(id);
         setServerError(null);
     }, []);
 
     const leaveSession = useCallback(() => {
         if (sessionId) {
-            socketRef.current?.emit('session:leave', { sessionId });
+            socketRef.current?.emit(WsEvent.LEAVE_SESSION, { sessionId });
             setSessionId(null);
             setTranscripts([]);
             setAnswers([]);
@@ -169,7 +198,7 @@ export function useSocket(token: string): UseSocketReturn {
                 },
             ]);
 
-            socketRef.current?.emit('question:ask', {
+            socketRef.current?.emit(WsEvent.ASK_QUESTION, {
                 sessionId,
                 text,
                 language,
@@ -180,7 +209,7 @@ export function useSocket(token: string): UseSocketReturn {
 
     const startNewSession = useCallback(async () => {
         try {
-            const res = await fetch('http://127.0.0.1:3001/sessions', {
+            const res = await fetch(apiEndpoint('/sessions'), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -203,7 +232,7 @@ export function useSocket(token: string): UseSocketReturn {
     const sendAudioChunk = useCallback(
         (chunk: ArrayBuffer) => {
             if (!sessionId) return;
-            socketRef.current?.emit('audio:chunk', {
+            socketRef.current?.emit(WsEvent.AUDIO_CHUNK, {
                 sessionId,
                 chunk,
                 timestamp: Date.now(),

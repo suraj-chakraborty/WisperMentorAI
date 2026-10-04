@@ -9,30 +9,35 @@
         "electron:dev": "vite",
         "electron:build": "vite build && electron-builder",
         "preview": "vite preview",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "dependencies": {
+        "@whispermentor/shared": "*",
         "@lingo.dev/compiler": "^0.3.8",
-        "i18next": "^25.8.11",
         "lingo.dev": "^0.131.6",
         "lucide-react": "^0.574.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "react-i18next": "^16.5.4",
         "react-markdown": "^10.1.0",
         "socket.io-client": "^4.7.0"
     },
     "devDependencies": {
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^14.3.1",
         "@types/react": "^18.2.0",
         "@types/react-dom": "^18.2.0",
         "@vitejs/plugin-react": "^4.2.0",
         "concurrently": "^8.2.0",
         "electron": "^29.0.0",
         "electron-builder": "^24.9.0",
+        "jsdom": "^24.1.3",
         "typescript": "^5.4.0",
         "vite": "^5.2.0",
         "vite-plugin-electron": "^0.29.0",
         "vite-plugin-electron-renderer": "^0.14.6",
+        "vitest": "^1.6.1",
         "wait-on": "^7.2.0"
     },
     "build": {
