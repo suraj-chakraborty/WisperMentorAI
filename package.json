@@ -14,7 +14,11 @@
     "build:backend": "npm run build --workspace=apps/backend",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "test:backend": "npm run test --workspace=apps/backend",
+    "test:desktop": "npm run test --workspace=apps/desktop",
+    "test:ai": "python -m pytest apps/ai-service",
+    "test": "npm run test:backend && npm run test:desktop && npm run test:ai"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
