@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiEndpoint } from '../config/api';
 
 interface Concept {
     name: string;
@@ -23,8 +24,8 @@ export const GlossaryView: React.FC<GlossaryViewProps> = ({ sessionId }) => {
             setLoading(true);
             try {
                 const url = sessionId
-                    ? `http://localhost:3001/sessions/${sessionId}/glossary`
-                    : `http://localhost:3001/sessions/global/glossary`; // Backend might need global endpoint if desired, but for now we focus on session
+                    ? apiEndpoint(`/sessions/${sessionId}/glossary`)
+                    : apiEndpoint(`/sessions/global/glossary`); // Backend might need global endpoint if desired, but for now we focus on session
 
                 const res = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }

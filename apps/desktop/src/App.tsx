@@ -15,6 +15,7 @@ import { KnowledgeGraphView } from '@/components/KnowledgeGraphView';
 
 import { LoginPage } from '@/components/LoginPage';
 import { SignupPage } from '@/components/SignupPage';
+import { apiEndpoint } from '@/config/api';
 
 function AuthenticatedApp({ token }: { token: string }) {
     const { setLocale } = useLingoContext();
@@ -26,7 +27,7 @@ function AuthenticatedApp({ token }: { token: string }) {
 
     // Sync app language on boot
     useEffect(() => {
-        fetch('http://127.0.0.1:3001/settings', {
+        fetch(apiEndpoint('/settings'), {
             headers: { 'Authorization': `Bearer ${token}` }
         })
             .then(res => res.json())

@@ -1,4 +1,5 @@
 import React from 'react';
+import { apiEndpoint } from '../config/api';
 
 interface DashboardProps {
     isConnected: boolean;
@@ -22,12 +23,12 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
 
     const fetchSessions = async () => {
         try {
-            const res = await fetch('http://localhost:3001/sessions', {
+            const res = await fetch(apiEndpoint('/sessions'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
-                setSessions(data);
+                setSessions(Array.isArray(data) ? data : (data.items || []));
             }
         } catch (e) {
             console.error("Failed to fetch sessions", e);
@@ -37,7 +38,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
     const handleGenerateSummary = async (id: string) => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:3001/sessions/${id}/summarize`, {
+            const res = await fetch(apiEndpoint(`/sessions/${id}/summarize`), {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

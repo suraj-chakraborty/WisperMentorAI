@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiEndpoint } from '../config/api';
 // import ForceGraph2D from 'react-force-graph-2d';
 
 interface Node {
@@ -53,7 +54,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ sessionI
             if (!sessionId) return;
             setLoading(true);
             try {
-                const res = await fetch(`http://localhost:3001/sessions/${sessionId}/graph`, {
+                const res = await fetch(apiEndpoint(`/sessions/${sessionId}/graph`), {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.ok) {
