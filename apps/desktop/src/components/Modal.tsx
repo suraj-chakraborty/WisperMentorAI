@@ -1,5 +1,4 @@
 import React, { ReactNode } from 'react';
-import { X } from 'lucide-react';
 
 interface ModalProps {
     title: string;
@@ -32,8 +31,12 @@ export const Modal: React.FC<ModalProps> = ({ title, isOpen, onClose, children, 
                     <button
                         onClick={onClose}
                         className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                        aria-label="Close"
                     >
-                        <X size={20} />
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
                     </button>
                 </div>
                 <div className="flex-1 overflow-auto bg-slate-950">

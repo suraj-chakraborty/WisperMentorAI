@@ -42,6 +42,7 @@ export class TranscriptionService {
                         params: { task }, // Added params option for task
                         headers: {
                             ...form.getHeaders(),
+                            'X-Internal-Token': process.env.AI_SERVICE_INTERNAL_TOKEN || 'whispermentor_internal_service_secret_token',
                         },
                         timeout: 120000, // 120s timeout for large chunks (increased from 60s)
                     })

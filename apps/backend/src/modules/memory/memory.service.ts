@@ -1,23 +1,32 @@
 
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Neo4jService } from './neo4j.service';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import * as http from 'http';
 import { int } from 'neo4j-driver';
-import { RedisService } from '../cache/redis.service';
+
+interface QueuedTranscript {
+    sessionId: string;
+    text: string;
+    speaker: string;
+    language: string;
+}
 
 @Injectable()
-export class MemoryService implements OnModuleInit {
+export class MemoryService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(MemoryService.name);
     private readonly aiServiceUrl: string;
+    private transcriptQueue: QueuedTranscript[] = [];
+    private flushTimer: NodeJS.Timeout | null = null;
+    private readonly BATCH_MAX_SIZE = 10;
+    private readonly BATCH_DEBOUNCE_MS = 2000;
 
     constructor(
         private readonly neo4jService: Neo4jService,
         private readonly httpService: HttpService,
-        private readonly configService: ConfigService,
-        private readonly redisService: RedisService
+        private readonly configService: ConfigService
     ) {
         this.aiServiceUrl = this.configService.get<string>('AI_SERVICE_URL') || 'http://127.0.0.1:8000';
         this.httpService.axiosRef.defaults.httpAgent = new http.Agent({ keepAlive: true });
@@ -25,6 +34,14 @@ export class MemoryService implements OnModuleInit {
 
     async onModuleInit() {
         await this.ensureVectorIndex();
+    }
+
+    async onModuleDestroy() {
+        if (this.flushTimer) {
+            clearTimeout(this.flushTimer);
+            this.flushTimer = null;
+        }
+        await this.flushTranscripts();
     }
 
     private async ensureVectorIndex() {
@@ -60,38 +77,77 @@ export class MemoryService implements OnModuleInit {
         }
     }
 
-    async saveTranscript(sessionId: string, text: string, speaker: string = 'User', language: string = 'en') {
+    async saveTranscript(sessionId: string, text: string, speaker: string = 'User', language: string = 'en'): Promise<void> {
         if (!text || !text.trim()) return;
 
-        try {
-            // 1. Get Embedding from AI Service
-            const embedding = await this.getEmbedding(text);
+        this.transcriptQueue.push({
+            sessionId,
+            text: text.trim(),
+            speaker,
+            language,
+        });
 
-            // 2. Save to Neo4j
+        // If buffer reached batch threshold, flush immediately; otherwise debounce
+        if (this.transcriptQueue.length >= this.BATCH_MAX_SIZE) {
+            await this.flushTranscripts();
+        } else if (!this.flushTimer) {
+            this.flushTimer = setTimeout(() => {
+                this.flushTranscripts().catch(err => {
+                    this.logger.error(`Error in scheduled transcript flush: ${err}`);
+                });
+            }, this.BATCH_DEBOUNCE_MS);
+        }
+    }
+
+    async flushTranscripts(): Promise<void> {
+        if (this.flushTimer) {
+            clearTimeout(this.flushTimer);
+            this.flushTimer = null;
+        }
+
+        if (this.transcriptQueue.length === 0) return;
+
+        const batch = this.transcriptQueue.splice(0, this.transcriptQueue.length);
+        const texts = batch.map(b => b.text);
+
+        try {
+            // 1. Fetch batch embeddings in a single HTTP request (BTN-8)
+            const embeddings = await this.getBatchEmbeddings(texts);
+
+            // 2. Prepare items with embeddings for Neo4j UNWIND
+            const items = batch.map((item, idx) => ({
+                sessionId: item.sessionId,
+                text: item.text,
+                speaker: item.speaker,
+                language: item.language,
+                embedding: embeddings[idx] || [],
+            }));
+
+            // 3. Save batch to Neo4j in single UNWIND query
             const session = this.neo4jService.getSession();
             try {
                 await session.run(
                     `
-                    MERGE (s:Session {id: $sessionId})
+                    UNWIND $items AS item
+                    MERGE (s:Session {id: item.sessionId})
                     CREATE (t:Transcript {
-                        text: $text,
-                        speaker: $speaker,
-                        sessionId: $sessionId,
+                        text: item.text,
+                        speaker: item.speaker,
+                        sessionId: item.sessionId,
                         timestamp: datetime(),
-                        embedding: $embedding,
-                        language: $language
+                        embedding: item.embedding,
+                        language: item.language
                     })
                     MERGE (s)-[:HAS_TRANSCRIPT]->(t)
-                    RETURN t
                     `,
-                    { sessionId, text, speaker, embedding, language }
+                    { items }
                 );
-                this.logger.log(`Saved transcript for session ${sessionId}: "${text.substring(0, 30)}..."`);
+                this.logger.log(`Batched & saved ${items.length} transcripts to Neo4j`);
             } finally {
                 await session.close();
             }
         } catch (error) {
-            this.logger.error(`Failed to save transcript: ${error}`);
+            this.logger.error(`Failed to flush transcript batch: ${error}`);
         }
     }
 
@@ -149,7 +205,7 @@ export class MemoryService implements OnModuleInit {
         try {
             await session.run(
                 `
-                MATCH (s:Session {id: $sessionId})
+                MERGE (s:Session {id: $sessionId})
                 UNWIND $concepts as c
                 MERGE (con:Concept {name: c.name})
                 SET con.definition = c.definition,
@@ -167,7 +223,7 @@ export class MemoryService implements OnModuleInit {
                     MERGE (con)-[:HAS_RULE]->(r)
                 )
 
-                WITH c, con
+                WITH c, con, sessionId
                 UNWIND c.related_concepts as related
                 MERGE (rel:Concept {name: related})
                 MERGE (con)-[:RELATED_TO]->(rel)
@@ -189,7 +245,7 @@ export class MemoryService implements OnModuleInit {
         try {
             await session.run(
                 `
-                MATCH (s:Session {id: $sessionId})
+                MERGE (s:Session {id: $sessionId})
                 UNWIND $qaPairs as pair
                 MERGE (q:Question {text: pair.question})
                 SET q.speaker = pair.speaker_q,
@@ -235,25 +291,40 @@ export class MemoryService implements OnModuleInit {
     }
 
     private async getEmbedding(text: string): Promise<number[]> {
-        // Redis Embedding Cache
-        const cacheKey = this.redisService.embeddingKey(text);
-        const cached = await this.redisService.get(cacheKey);
-        if (cached) {
-            this.logger.debug(`⚡ [EMBED CACHE HIT] "${text.substring(0, 30)}..."`);
-            return JSON.parse(cached);
-        }
-
         try {
+            const internalToken = this.configService.get<string>('AI_SERVICE_INTERNAL_TOKEN') || 'whispermentor_internal_service_secret_token';
             const { data } = await firstValueFrom(
-                this.httpService.post(`${this.aiServiceUrl}/embed`, { text }, { timeout: 60000 })
+                this.httpService.post(`${this.aiServiceUrl}/embed`, { text }, {
+                    timeout: 60000,
+                    headers: {
+                        'X-Internal-Token': internalToken,
+                    },
+                })
             );
-            // Cache embedding for 48h (embeddings are deterministic)
-            await this.redisService.set(cacheKey, JSON.stringify(data.embedding), 172800);
-            this.logger.debug(`📦 [EMBED CACHED] "${text.substring(0, 30)}..."`);
             return data.embedding;
         } catch (error) {
             this.logger.error(`Embedding failed: ${error}`);
+            // Return empty or throw? Empty for now to convert to null or handle gracefully
             return [];
+        }
+    }
+
+    private async getBatchEmbeddings(texts: string[]): Promise<number[][]> {
+        if (!texts || texts.length === 0) return [];
+        try {
+            const internalToken = this.configService.get<string>('AI_SERVICE_INTERNAL_TOKEN') || 'whispermentor_internal_service_secret_token';
+            const { data } = await firstValueFrom(
+                this.httpService.post(`${this.aiServiceUrl}/embed`, { texts }, {
+                    timeout: 60000,
+                    headers: {
+                        'X-Internal-Token': internalToken,
+                    },
+                })
+            );
+            return data.embeddings || texts.map(() => []);
+        } catch (error) {
+            this.logger.error(`Batch embedding failed: ${error}`);
+            return texts.map(() => []);
         }
     }
 

@@ -99,6 +99,7 @@ export enum WsEvent {
     // Server → Client
     TRANSCRIPT_UPDATE = 'transcript:update',
     ANSWER_RESPONSE = 'answer:response',
+    ANSWER_CHUNK = 'answer:chunk',
     SESSION_STATUS = 'session:status',
     ERROR = 'error',
 }
@@ -115,6 +116,12 @@ export interface IWsQuestionAsk {
     sessionId: string;
     text: string;
     language?: string;
+}
+
+export interface IWsAnswerChunk {
+    questionId: string;
+    chunk: string;
+    isDone?: boolean;
 }
 
 export interface IWsAnswerResponse {

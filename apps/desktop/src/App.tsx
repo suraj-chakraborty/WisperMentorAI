@@ -15,6 +15,7 @@ import { KnowledgeGraphView } from '@/components/KnowledgeGraphView';
 
 import { LoginPage } from '@/components/LoginPage';
 import { SignupPage } from '@/components/SignupPage';
+import { apiEndpoint } from '@/config/api';
 
 function AuthenticatedApp({ token }: { token: string }) {
     const { setLocale } = useLingoContext();
@@ -23,14 +24,10 @@ function AuthenticatedApp({ token }: { token: string }) {
     const [elapsed, setElapsed] = useState(0);
     const [isTranslationEnabled, setIsTranslationEnabled] = useState(false);
     const [meetingAlertApp, setMeetingAlertApp] = useState<string | null>(null);
-    const [meetingAlertTitle, setMeetingAlertTitle] = useState<string | null>(null);
-
-    // Lifted translation state so it survives SessionView unmount/remount
-    const [translationData, setTranslationData] = useState<Record<number, { text: string; warning?: string }>>({});
 
     // Sync app language on boot
     useEffect(() => {
-        fetch('http://127.0.0.1:3001/settings', {
+        fetch(apiEndpoint('/settings'), {
             headers: { 'Authorization': `Bearer ${token}` }
         })
             .then(res => res.json())
@@ -55,7 +52,6 @@ function AuthenticatedApp({ token }: { token: string }) {
         sendAudioChunk,
         startNewSession,
         toggleTranslation,
-        startMeetingSession,
     } = useSocket(token);
 
     const {
@@ -83,12 +79,13 @@ function AuthenticatedApp({ token }: { token: string }) {
         window.electronAPI?.onToggleMic(handleMicToggle);
 
         // Listen for meeting detection
-        window.electronAPI?.onMeetingDetected((appName: string, meetingTitle: string) => {
+        window.electronAPI?.onMeetingDetected((appName: string) => {
             if (!isCapturing && !sessionId) {
                 setMeetingAlertApp(appName);
-                setMeetingAlertTitle(meetingTitle);
+                // Switch to dashboard if needed, or overlay?
+                // If in overlay mode, we should probably stay there or expand?
                 if (isOverlay) {
-                    // Show overlay alert
+                    // Maybe show a specific overlay alert?
                 } else {
                     window.electronAPI?.maximizeWindow();
                 }
@@ -205,8 +202,6 @@ function AuthenticatedApp({ token }: { token: string }) {
                             isPaused={isPaused}
                             togglePause={togglePause}
                             token={token}
-                            translationData={translationData}
-                            setTranslationData={setTranslationData}
                         />
                     )}
                     {activePage === 'settings' && (
@@ -248,14 +243,8 @@ function AuthenticatedApp({ token }: { token: string }) {
                             </button>
                             <button
                                 onClick={() => {
-                                    if (meetingAlertTitle) {
-                                        startMeetingSession(meetingAlertTitle);
-                                    } else {
-                                        startNewSession();
-                                    }
+                                    startNewSession();
                                     setMeetingAlertApp(null);
-                                    setMeetingAlertTitle(null);
-                                    setActivePage('session');
                                 }}
                                 className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
                                 style={{ padding: '8px 16px', color: 'white', background: '#4f46e5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}

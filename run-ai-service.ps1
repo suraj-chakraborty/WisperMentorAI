@@ -8,8 +8,16 @@ if (-not (Test-Path ".venv")) {
 }
 
 # Activate virtual environment
+# MSYS2 Python creates 'bin/' instead of 'Scripts/', so check both paths
 Write-Host "Activating virtual environment..."
-.\.venv\Scripts\Activate.ps1
+if (Test-Path ".venv\Scripts\Activate.ps1") {
+    .\.venv\Scripts\Activate.ps1
+} elseif (Test-Path ".venv\bin\Activate.ps1") {
+    .\.venv\bin\Activate.ps1
+} else {
+    Write-Error "Could not find virtual environment activation script!"
+    exit 1
+}
 
 # Upgrade pip and install dependencies
 Write-Host "Installing dependencies..."

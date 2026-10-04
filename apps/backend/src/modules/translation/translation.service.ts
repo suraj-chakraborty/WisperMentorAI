@@ -5,9 +5,9 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { LlmService } from '../ai/llm.service';
 import { SettingsService } from '../settings/settings.service';
-import { RedisService } from '../cache/redis.service';
 
 import { LingoDotDevEngine } from 'lingo.dev/sdk';
+import { redactSecret } from '../../common/utils/logger.utils';
 
 @Injectable()
 export class TranslationService {
@@ -20,22 +20,12 @@ export class TranslationService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         private readonly llmService: LlmService,
-        private readonly settingsService: SettingsService,
-        private readonly redisService: RedisService
+        private readonly settingsService: SettingsService
     ) { }
 
     async translate(text: string, targetLang: string, userId?: string): Promise<{ translation: string; warning?: string }> {
         if (!text || !text.trim()) return { translation: '' };
         if (!targetLang) return { translation: text };
-
-        // Redis Cache Check
-        const cacheKey = this.redisService.translationKey(text, targetLang);
-        const cached = await this.redisService.get(cacheKey);
-        if (cached) {
-            this.logger.log(`⚡ [CACHE HIT] "${text.substring(0, 30)}..." -> ${targetLang}`);
-            return { translation: cached };
-        }
-        this.logger.debug(`[CACHE MISS] "${text.substring(0, 30)}..." -> ${targetLang}`);
 
         const now = Date.now();
         const isDegraded = now < this.degradedUntil;
@@ -44,7 +34,7 @@ export class TranslationService {
         const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const lingoConfig = settings?.lingo || {};
         const llmConfig = settings?.llm || {};
-        this.logger.log(`🔑 [DEBUG] translate() userId=${userId || 'demo-user'}, lingoApiKey=${lingoConfig.apiKey ? lingoConfig.apiKey.slice(0, 8) + '...' : '(empty)'}, llmProvider=${settings?.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama')}, llmApiKey=${llmConfig.apiKey ? llmConfig.apiKey.slice(0, 8) + '...' : '(empty)'}`);
+        this.logger.debug(`translate() userId=${userId || 'demo-user'}, lingoApiKey=${redactSecret(lingoConfig.apiKey)}, llmProvider=${settings?.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama')}, llmApiKey=${redactSecret(llmConfig.apiKey)}`);
 
         // Use user's key first
         const userApiKey = lingoConfig.apiKey;
@@ -85,7 +75,6 @@ export class TranslationService {
         // 2. LLM Fallback (Gemini/Ollama)
         try {
             const translation = await this.translateWithLlm(text, targetLang, settings);
-            await this.cacheTranslation(text, targetLang, translation);
             return { translation };
         } catch (error: any) {
             this.logger.warn(`LLM fallback failed, falling back to Local AI: ${error.message}`);
@@ -93,39 +82,46 @@ export class TranslationService {
 
         // 3. Local AI Fallback (Port 8000)
         try {
-            const result = await this.translateWithLocalAi(text);
-            if (result.translation && result.translation !== text) {
-                await this.cacheTranslation(text, targetLang, result.translation);
-            }
-            return result;
+            return await this.translateWithLocalAi(text);
         } catch (error: any) {
             this.logger.error(`❌ All translation fallbacks failed: ${error.message}. Returning original text.`);
             return { translation: text, warning: "Translation Unavailable (All providers failed)" };
         }
     }
 
-    /** Cache a successful translation result */
-    private async cacheTranslation(text: string, targetLang: string, translation: string): Promise<void> {
-        const cacheKey = this.redisService.translationKey(text, targetLang);
-        await this.redisService.set(cacheKey, translation, 86400); // 24h TTL
-        this.logger.log(`📦 [CACHED] "${text.substring(0, 30)}..." -> ${targetLang} (key: ${cacheKey})`);
+    async translateBatch(texts: string[], targetLang: string, userId?: string): Promise<Array<{ original: string; translation: string; warning?: string }>> {
+        if (!texts || !texts.length) return [];
+        return await Promise.all(
+            texts.map(async (text) => {
+                const result = await this.translate(text, targetLang, userId);
+                return {
+                    original: text,
+                    translation: result.translation,
+                    warning: result.warning,
+                };
+            })
+        );
     }
 
     private async translateWithLingo(text: string, targetLang: string, apiKey: string): Promise<string> {
         const lingo = new LingoDotDevEngine({ apiKey });
-        const result = await lingo.localizeText(text, {
+        return await lingo.localizeText(text, {
             sourceLocale: 'en',
             targetLocale: targetLang,
-            fast: true
+            fast: true // Prioritize speed for real-time transcription
         });
-        await this.cacheTranslation(text, targetLang, result);
-        return result;
     }
 
     private async translateWithLocalAi(text: string): Promise<{ translation: string; warning?: string }> {
         const url = this.configService.get<string>('LOCAL_AI_URL') || 'http://localhost:8000/translate';
+        const internalToken = this.configService.get<string>('AI_SERVICE_INTERNAL_TOKEN') || 'whispermentor_internal_service_secret_token';
         const response = await firstValueFrom(
-            this.httpService.post(url, { text }, { timeout: 10000 })
+            this.httpService.post(url, { text }, {
+                timeout: 10000,
+                headers: {
+                    'X-Internal-Token': internalToken,
+                },
+            })
         );
         return {
             translation: response.data.translation,

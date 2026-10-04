@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 
 import { useAuth } from '../context/AuthContext';
 import { useLingoContext } from '@lingo.dev/compiler/react';
+import { API_BASE_URL } from '../config/api';
 
 // API base url
-const API_URL = 'http://127.0.0.1:3001';
+const API_URL = API_BASE_URL;
 
 export const SettingsView: React.FC = () => {
     const { setLocale } = useLingoContext();
@@ -37,7 +38,7 @@ export const SettingsView: React.FC = () => {
                 const data = await res.json();
                 // Only update if there's relevant data
                 if (data.llm || data.lingo || data.offlineMode !== undefined) {
-                    console.log(`🔑 [DEBUG] Settings loaded: llm.provider=${data.llm?.provider}, llm.apiKey=${data.llm?.apiKey ? data.llm.apiKey.slice(0, 8) + '...' : '(empty)'}, lingo.apiKey=${data.lingo?.apiKey ? data.lingo.apiKey.slice(0, 8) + '...' : '(empty)'}`);
+                    console.log(`🔑 [DEBUG] Settings loaded: llm.provider=${data.llm?.provider}, llm.apiKey=${data.llm?.apiKey ? '***' : '(empty)'}, lingo.apiKey=${data.lingo?.apiKey ? '***' : '(empty)'}`);
                     setSettings((prevSettings: any) => ({
                         ...prevSettings,
                         llm: { ...prevSettings.llm, ...(data.llm || {}) },

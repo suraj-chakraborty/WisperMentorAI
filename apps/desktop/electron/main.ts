@@ -1,5 +1,6 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer, Notification, safeStorage } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -21,7 +22,7 @@ function createMainWindow(): void {
         minWidth: 800,
         minHeight: 600,
         title: 'WhisperMentor AI',
-        icon: path.join(VITE_PUBLIC, 'logo.png'),
+        icon: path.join(VITE_PUBLIC, 'logo-short.png'),
         frame: false, // Custom titlebar
         titleBarStyle: 'hidden',
         webPreferences: {
@@ -95,7 +96,7 @@ function toggleOverlay(): void {
 // ─── System Tray ────────────────────────────────────────────────
 
 function createTray(): void {
-    const iconPath = path.join(VITE_PUBLIC, 'logo.png');
+    const iconPath = path.join(VITE_PUBLIC, 'logo-short.png');
     const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
     tray = new Tray(icon);
 
@@ -152,6 +153,53 @@ function registerIpcHandlers(): void {
     });
     ipcMain.on('window:close', () => mainWindow?.close());
 
+    // Secure token storage via safeStorage (OS Keychain / DPAPI)
+    const tokenPath = path.join(app.getPath('userData'), 'auth_token.enc');
+
+    ipcMain.handle('auth:save-token', (_event, token: string) => {
+        try {
+            if (!safeStorage.isEncryptionAvailable()) {
+                console.warn('[Security] safeStorage encryption is not available on this platform. Storing encoded token.');
+                fs.writeFileSync(tokenPath, Buffer.from(token).toString('base64'), 'utf-8');
+                return true;
+            }
+            const encrypted = safeStorage.encryptString(token);
+            fs.writeFileSync(tokenPath, encrypted);
+            return true;
+        } catch (error) {
+            console.error('Failed to encrypt and save auth token:', error);
+            return false;
+        }
+    });
+
+    ipcMain.handle('auth:get-token', () => {
+        try {
+            if (!fs.existsSync(tokenPath)) {
+                return null;
+            }
+            const fileData = fs.readFileSync(tokenPath);
+            if (!safeStorage.isEncryptionAvailable()) {
+                return Buffer.from(fileData.toString('utf-8'), 'base64').toString('utf-8');
+            }
+            return safeStorage.decryptString(fileData);
+        } catch (error) {
+            console.error('Failed to read or decrypt auth token:', error);
+            return null;
+        }
+    });
+
+    ipcMain.handle('auth:clear-token', () => {
+        try {
+            if (fs.existsSync(tokenPath)) {
+                fs.unlinkSync(tokenPath);
+            }
+            return true;
+        } catch (error) {
+            console.error('Failed to clear auth token:', error);
+            return false;
+        }
+    });
+
     ipcMain.handle('overlay:toggle', () => {
         toggleOverlay();
         return isOverlayMode;
@@ -172,51 +220,62 @@ function registerIpcHandlers(): void {
 // ─── Meeting Detection ──────────────────────────────────────────
 
 function startMeetingDetection() {
-    if (meetingCheckInterval) clearInterval(meetingCheckInterval);
+    if (meetingCheckInterval) {
+        clearTimeout(meetingCheckInterval);
+        meetingCheckInterval = null;
+    }
 
-    meetingCheckInterval = setInterval(async () => {
-        if (!mainWindow) return;
+    const checkMeetings = async () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+
+        let nextDelay = 15000; // 15s idle poll (reduced from aggressive 5s)
 
         try {
-            const sources = await desktopCapturer.getSources({ types: ['window'] });
-            const meetingPatterns = [
-                { match: 'Zoom Meeting', appName: 'Zoom' },
-                { match: 'Microsoft Teams', appName: 'Microsoft Teams' },
-                { match: 'Meet - ', appName: 'Google Meet' },
-                { match: 'Webex', appName: 'Webex' },
-            ];
+            // Set thumbnailSize to 0 to prevent Electron from capturing window textures on each tick
+            const sources = await desktopCapturer.getSources({
+                types: ['window'],
+                thumbnailSize: { width: 0, height: 0 },
+            });
+            const meetingApps = ['Zoom Meeting', 'Microsoft Teams', 'Meet - ', 'Webex'];
 
             let detectedApp: string | null = null;
-            let detectedTitle: string | null = null;
 
             for (const source of sources) {
-                for (const pattern of meetingPatterns) {
-                    if (source.name.includes(pattern.match)) {
-                        detectedApp = pattern.appName;
-                        detectedTitle = source.name; // Full window title for unique hashing
+                for (const app of meetingApps) {
+                    if (source.name.includes(app)) {
+                        detectedApp = app === 'Meet - ' ? 'Google Meet' : app.replace(' Meeting', '');
                         break;
                     }
                 }
                 if (detectedApp) break;
             }
 
-            if (detectedApp && detectedTitle && detectedTitle !== lastDetectedMeetingApp) {
-                lastDetectedMeetingApp = detectedTitle;
-                mainWindow.webContents.send('meeting:detected', detectedApp, detectedTitle);
+            if (detectedApp && detectedApp !== lastDetectedMeetingApp) {
+                lastDetectedMeetingApp = detectedApp;
+                mainWindow.webContents.send('meeting:detected', detectedApp);
 
-                const { Notification } = require('electron');
                 new Notification({
                     title: 'Meeting Detected',
                     body: `${detectedApp} is running. Start WhisperMentor?`,
-                    silent: true
+                    silent: true,
                 }).show();
             } else if (!detectedApp) {
                 lastDetectedMeetingApp = null;
             }
+
+            // If a meeting is already active and recognized, back off to 30s
+            if (lastDetectedMeetingApp) {
+                nextDelay = 30000;
+            }
         } catch (error) {
             console.error('Error detecting meetings:', error);
+            nextDelay = 30000; // Back off on error
         }
-    }, 5000);
+
+        meetingCheckInterval = setTimeout(checkMeetings, nextDelay);
+    };
+
+    meetingCheckInterval = setTimeout(checkMeetings, 5000); // Initial check after 5s
 }
 
 // ─── App Lifecycle ──────────────────────────────────────────────
@@ -232,7 +291,7 @@ app.whenReady().then(() => {
         mainWindow?.webContents.send('mic:toggle');
     });
 
-    globalShortcut.register('CommandOrControl+Shift+O', () => {
+    const handleOverlayToggle = () => {
         if (mainWindow) {
             if (!mainWindow.isVisible()) {
                 mainWindow.show();
@@ -240,7 +299,11 @@ app.whenReady().then(() => {
             }
             toggleOverlay();
         }
-    });
+    };
+
+    globalShortcut.register('CommandOrControl+Shift+O', handleOverlayToggle);
+    globalShortcut.register('CommandOrControl+Shift+Space', handleOverlayToggle);
+
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -257,5 +320,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+    if (meetingCheckInterval) {
+        clearTimeout(meetingCheckInterval);
+        meetingCheckInterval = null;
+    }
     globalShortcut.unregisterAll();
 });
+

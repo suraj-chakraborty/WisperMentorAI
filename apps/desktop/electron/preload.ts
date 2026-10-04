@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onToggleMic: (callback: () => void) => {
         ipcRenderer.on('mic:toggle', () => callback());
     },
-    onMeetingDetected: (callback: (appName: string, meetingTitle: string) => void) => {
-        ipcRenderer.on('meeting:detected', (_event, appName, meetingTitle) => callback(appName, meetingTitle));
+    onMeetingDetected: (callback: (appName: string) => void) => {
+        ipcRenderer.on('meeting:detected', (_event, appName) => callback(appName));
     },
 
     // Audio capture
@@ -34,4 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeListener: (channel: string) => {
         ipcRenderer.removeAllListeners(channel);
     },
+
+    // Secure token storage (OS Keychain via safeStorage)
+    saveToken: (token: string) => ipcRenderer.invoke('auth:save-token', token),
+    getToken: () => ipcRenderer.invoke('auth:get-token'),
+    clearToken: () => ipcRenderer.invoke('auth:clear-token'),
 });

@@ -4,7 +4,68 @@ import { LlmService, ChatMessage } from './llm.service';
 import { SettingsService } from '../settings/settings.service';
 import { TranscriptService } from '../transcript/transcript.service';
 import { TranslationService } from '../translation/translation.service';
-import { RedisService } from '../cache/redis.service';
+import { redactSecret } from '../../common/utils/logger.utils';
+
+export class AnswerStreamFilter {
+    private buffer = '';
+    private state: 'detecting' | 'in_json_answer' | 'passthrough' | 'done' = 'detecting';
+    private escaped = false;
+
+    constructor(private readonly onChunk: (chunk: string) => void) {}
+
+    feed(token: string) {
+        if (this.state === 'done') return;
+
+        if (this.state === 'passthrough') {
+            this.onChunk(token);
+            return;
+        }
+
+        this.buffer += token;
+
+        if (this.state === 'detecting') {
+            const match = this.buffer.match(/"answer"\s*:\s*"/);
+            if (match && match.index !== undefined) {
+                this.state = 'in_json_answer';
+                const remaining = this.buffer.slice(match.index + match[0].length);
+                this.buffer = '';
+                if (remaining) {
+                    this.feed(remaining);
+                }
+                return;
+            }
+
+            if (this.buffer.length > 50 && !this.buffer.trim().startsWith('{')) {
+                this.state = 'passthrough';
+                this.onChunk(this.buffer);
+                this.buffer = '';
+            }
+            return;
+        }
+
+        if (this.state === 'in_json_answer') {
+            let output = '';
+            for (let i = 0; i < token.length; i++) {
+                const char = token[i];
+                if (this.escaped) {
+                    output += char === 'n' ? '\n' : char === 't' ? '\t' : char;
+                    this.escaped = false;
+                } else if (char === '\\') {
+                    this.escaped = true;
+                } else if (char === '"') {
+                    this.state = 'done';
+                    if (output) this.onChunk(output);
+                    return;
+                } else {
+                    output += char;
+                }
+            }
+            if (output) {
+                this.onChunk(output);
+            }
+        }
+    }
+}
 
 @Injectable()
 export class ReasoningService {
@@ -15,41 +76,55 @@ export class ReasoningService {
         private readonly llmService: LlmService,
         private readonly settingsService: SettingsService,
         private readonly transcriptService: TranscriptService,
-        private readonly translationService: TranslationService,
-        private readonly redisService: RedisService
+        private readonly translationService: TranslationService
     ) { }
 
-    async ask(question: string, sessionId: string, targetLang?: string, userId?: string): Promise<string> {
+    prepareTranscriptForPrompt(transcripts: Array<{ speaker: string; text: string }>, maxChars = 32000): string {
+        const formattedLines = transcripts.map(t => `${t.speaker}: ${t.text}`);
+        const fullText = formattedLines.join('\n');
+        if (fullText.length <= maxChars) {
+            return fullText;
+        }
+
+        const headBudget = Math.floor(maxChars * 0.15);
+        const tailBudget = maxChars - headBudget - 120;
+
+        let headText = '';
+        let headCount = 0;
+        for (const line of formattedLines) {
+            if (headText.length + line.length > headBudget) break;
+            headText += (headText ? '\n' : '') + line;
+            headCount++;
+        }
+
+        let tailText = '';
+        let tailCount = 0;
+        for (let i = formattedLines.length - 1; i >= headCount; i--) {
+            const line = formattedLines[i];
+            if (tailText.length + line.length > tailBudget) break;
+            tailText = line + (tailText ? '\n' : '') + tailText;
+            tailCount++;
+        }
+
+        const omittedCount = formattedLines.length - headCount - tailCount;
+        return `${headText}\n\n[... Note: ${omittedCount} intermediate transcript lines omitted to fit context window ...]\n\n${tailText}`;
+    }
+
+    async ask(
+        question: string,
+        sessionId: string,
+        targetLang?: string,
+        userId?: string,
+        onChunk?: (chunk: string) => void
+    ): Promise<string> {
+        // ... (existing ask method) ...
         this.logger.log(`Reasoning about: "${question}"`);
 
-        // Redis RAG Cache
-        const cacheKey = this.redisService.ragKey(sessionId, question + (targetLang || ''));
-        const cached = await this.redisService.get(cacheKey);
-        if (cached) {
-            this.logger.log(`⚡ [RAG CACHE HIT] "${question.substring(0, 40)}..."`);
-            return cached;
-        }
-        this.logger.debug(`[RAG CACHE MISS] "${question.substring(0, 40)}..."`);
-
-        // 1. Retrieve Context
-        const summaryKeywords = ['summarize', 'summerize', 'summary', 'recap', 'overview', 'what was discussed', 'what happened'];
-        const isSummaryRequest = summaryKeywords.some(k => question.toLowerCase().includes(k));
-
-        let contextText: string;
-        if (isSummaryRequest) {
-            // Summary request → fetch ALL transcripts from the session
-            this.logger.log(`📋 Summary request detected — fetching all transcripts for session ${sessionId}`);
-            const allTranscripts = await this.transcriptService.getTranscripts(sessionId);
-            contextText = allTranscripts
-                .map((t: any) => `- [${t.speaker}]: ${t.text}`)
-                .join('\n');
-        } else {
-            // Normal question → vector search (RAG)
-            const contextDocs = await this.memoryService.search(question, 25, sessionId);
-            contextText = contextDocs
-                .map((doc: any) => `- ${doc.text}`)
-                .join('\n');
-        }
+        // 1. Retrieve Context (RAG) - Filter by SessionId
+        const contextDocs = await this.memoryService.search(question, 25, sessionId);
+        const contextText = contextDocs
+            .map((doc: any) => `- ${doc.text}`)
+            .join('\n');
 
         // 2. Get Tone/Style Examples
         const styleExamples = await this.memoryService.getStyleExamples(sessionId, 3);
@@ -57,7 +132,7 @@ export class ReasoningService {
             ? `\n\nAdopt the speaking style of the following examples:\n${styleExamples.map(e => `"${e}"`).join('\n')}`
             : '';
 
-        this.logger.debug(`Retrieved ${contextText.length} chars of context and ${styleExamples.length} style examples.`);
+        this.logger.debug(`Retrieved ${contextDocs.length} memories and ${styleExamples.length} style examples.`);
 
         const messages: ChatMessage[] = [
             {
@@ -81,13 +156,27 @@ DO NOT use markdown in the output. Just raw JSON.`
         const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const llmConfig = settings.llm || {};
         const provider = settings.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama');
-        this.logger.log(`🔑 [DEBUG] userId=${userId || 'demo-user'}, provider=${provider}, apiKey=${llmConfig.apiKey ? llmConfig.apiKey.slice(0, 8) + '...' : '(empty)'}`);
+        this.logger.debug(`userId=${userId || 'demo-user'}, provider=${provider}, apiKey=${redactSecret(llmConfig.apiKey)}`);
 
-        const response = await this.llmService.generateResponse(messages, {
-            provider,
-            apiKey: llmConfig.apiKey,
-            model: llmConfig.model
-        });
+        let response: string;
+        if (onChunk && typeof this.llmService.generateResponseStream === 'function') {
+            const filter = new AnswerStreamFilter(onChunk);
+            response = await this.llmService.generateResponseStream(
+                messages,
+                (token: string) => filter.feed(token),
+                {
+                    provider,
+                    apiKey: llmConfig.apiKey,
+                    model: llmConfig.model
+                }
+            );
+        } else {
+            response = await this.llmService.generateResponse(messages, {
+                provider,
+                apiKey: llmConfig.apiKey,
+                model: llmConfig.model
+            });
+        }
 
         try {
             const cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -106,12 +195,14 @@ DO NOT use markdown in the output. Just raw JSON.`
 
                 if (quotes.length > 0) {
                     formattedResponse += `**Context (${targetLang.toUpperCase()}):**\n`;
-                    for (const quote of quotes) {
-                        const { translation: translatedQuote } = await this.translationService.translate(quote, targetLang, userId);
-                        formattedResponse += `> ${quote}\n> *${translatedQuote}*\n\n`;
-                    }
+                    const translatedQuotes = await Promise.all(
+                        quotes.map(async (quote: string) => {
+                            const { translation: translatedQuote } = await this.translationService.translate(quote, targetLang, userId);
+                            return `> ${quote}\n> *${translatedQuote}*\n\n`;
+                        })
+                    );
+                    formattedResponse += translatedQuotes.join('');
                 }
-                await this.cacheRagResponse(cacheKey, formattedResponse);
                 return formattedResponse;
             } else {
                 // Standard Output (No targetLang or English)
@@ -120,7 +211,6 @@ DO NOT use markdown in the output. Just raw JSON.`
                     formattedResponse += `**Context:**\n`;
                     quotes.forEach((q: string) => formattedResponse += `> > ${q}\n`);
                 }
-                await this.cacheRagResponse(cacheKey, formattedResponse);
                 return formattedResponse;
             }
 
@@ -128,12 +218,6 @@ DO NOT use markdown in the output. Just raw JSON.`
             this.logger.error(`Failed to parse Q&A JSON or Translate: ${e}`);
             return response; // Fallback to raw response
         }
-    }
-
-    /** Cache a RAG response */
-    private async cacheRagResponse(cacheKey: string, response: string): Promise<void> {
-        await this.redisService.set(cacheKey, response, 3600); // 1h TTL
-        this.logger.log(`📦 [RAG CACHED] (key: ${cacheKey})`);
     }
 
     async generateSessionSummary(sessionId: string, userId?: string): Promise<{ summary: string; actionItems: string[]; keyDecisions: string[]; topics: string[] }> {
@@ -145,9 +229,7 @@ DO NOT use markdown in the output. Just raw JSON.`
             return { summary: "No transcripts found for this session.", actionItems: [], keyDecisions: [], topics: [] };
         }
 
-        const fullText = transcripts
-            .map((t: any) => `${t.speaker}: ${t.text}`)
-            .join('\n');
+        const fullText = this.prepareTranscriptForPrompt(transcripts);
 
         // 2. Construct Prompt
         const messages: ChatMessage[] = [
@@ -200,14 +282,21 @@ If there are no action items or decisions, return empty arrays.`
             const targetLang = settings.lingo?.preferredLanguage || 'en';
             if (targetLang !== 'en') {
                 this.logger.log(`Translating summary to ${targetLang}`);
-                summaryData.summary = await this.translationService.translate(summaryData.summary, targetLang, userId);
+                const translatedSummary = await this.translationService.translate(summaryData.summary, targetLang, userId);
+                summaryData.summary = translatedSummary.translation || summaryData.summary;
 
                 // Translate arrays
                 summaryData.actionItems = await Promise.all(
-                    (summaryData.actionItems || []).map((item: string) => this.translationService.translate(item, targetLang, userId))
+                    (summaryData.actionItems || []).map(async (item: string) => {
+                        const res = await this.translationService.translate(item, targetLang, userId);
+                        return res.translation || item;
+                    })
                 );
                 summaryData.keyDecisions = await Promise.all(
-                    (summaryData.keyDecisions || []).map((item: string) => this.translationService.translate(item, targetLang, userId))
+                    (summaryData.keyDecisions || []).map(async (item: string) => {
+                        const res = await this.translationService.translate(item, targetLang, userId);
+                        return res.translation || item;
+                    })
                 );
             }
 
@@ -229,7 +318,7 @@ If there are no action items or decisions, return empty arrays.`
         const transcripts = await this.transcriptService.getTranscripts(sessionId);
         if (!transcripts.length) return [];
 
-        const fullText = transcripts.map((t: any) => `${t.speaker}: ${t.text}`).join('\n');
+        const fullText = this.prepareTranscriptForPrompt(transcripts);
 
         const messages: ChatMessage[] = [
             {
@@ -281,14 +370,20 @@ Return ONLY valid JSON. No markdown.`
 
             if (targetLang !== 'en') {
                 this.logger.log(`Translating ${concepts.length} concepts to ${targetLang}`);
-                for (const c of concepts) {
-                    try {
-                        c.name_translated = await this.translationService.translate(c.name, targetLang, userId);
-                        c.definition_translated = await this.translationService.translate(c.definition, targetLang, userId);
-                    } catch (e) {
-                        this.logger.warn(`Failed to translate concept ${c.name}: ${e}`);
-                    }
-                }
+                await Promise.all(
+                    concepts.map(async (c: any) => {
+                        try {
+                            const [nameRes, defRes] = await Promise.all([
+                                this.translationService.translate(c.name, targetLang, userId),
+                                this.translationService.translate(c.definition, targetLang, userId),
+                            ]);
+                            c.name_translated = nameRes.translation || c.name;
+                            c.definition_translated = defRes.translation || c.definition;
+                        } catch (e) {
+                            this.logger.warn(`Failed to translate concept ${c.name}: ${e}`);
+                        }
+                    })
+                );
             }
             return concepts;
         } catch (e) {
@@ -303,7 +398,7 @@ Return ONLY valid JSON. No markdown.`
         const transcripts = await this.transcriptService.getTranscripts(sessionId);
         if (!transcripts.length) return [];
 
-        const fullText = transcripts.map((t: any) => `${t.speaker}: ${t.text}`).join('\n');
+        const fullText = this.prepareTranscriptForPrompt(transcripts);
 
         const messages: ChatMessage[] = [
             {
@@ -353,14 +448,20 @@ Return ONLY valid JSON. No markdown.`
 
             if (targetLang !== 'en') {
                 this.logger.log(`Translating ${qaPairs.length} QA pairs to ${targetLang}`);
-                for (const pair of qaPairs) {
-                    try {
-                        if (pair.question) pair.question_translated = await this.translationService.translate(pair.question, targetLang, userId);
-                        if (pair.answer) pair.answer_translated = await this.translationService.translate(pair.answer, targetLang, userId);
-                    } catch (e) {
-                        this.logger.warn(`Failed to translate QA pair: ${e}`);
-                    }
-                }
+                await Promise.all(
+                    qaPairs.map(async (pair: any) => {
+                        try {
+                            const [qRes, aRes] = await Promise.all([
+                                pair.question ? this.translationService.translate(pair.question, targetLang, userId) : Promise.resolve({ translation: '' }),
+                                pair.answer ? this.translationService.translate(pair.answer, targetLang, userId) : Promise.resolve({ translation: '' }),
+                            ]);
+                            if (pair.question) pair.question_translated = qRes.translation || pair.question;
+                            if (pair.answer) pair.answer_translated = aRes.translation || pair.answer;
+                        } catch (e) {
+                            this.logger.warn(`Failed to translate QA pair: ${e}`);
+                        }
+                    })
+                );
             }
             return qaPairs;
         } catch (e) {

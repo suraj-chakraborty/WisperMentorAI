@@ -1,4 +1,5 @@
 import React from 'react';
+import { apiEndpoint } from '../config/api';
 
 interface DashboardProps {
     isConnected: boolean;
@@ -14,7 +15,6 @@ interface DashboardProps {
 export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, onStartSession, onResumeSession, onNavigate, token }: DashboardProps) {
     const [sessions, setSessions] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(false);
-    const [selectedSession, setSelectedSession] = React.useState<any | null>(null);
 
     // Fetch sessions on mount
     React.useEffect(() => {
@@ -23,12 +23,12 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
 
     const fetchSessions = async () => {
         try {
-            const res = await fetch('http://localhost:3001/sessions', {
+            const res = await fetch(apiEndpoint('/sessions'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
-                setSessions(data);
+                setSessions(Array.isArray(data) ? data : (data.items || []));
             }
         } catch (e) {
             console.error("Failed to fetch sessions", e);
@@ -38,7 +38,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
     const handleGenerateSummary = async (id: string) => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:3001/sessions/${id}/summarize`, {
+            const res = await fetch(apiEndpoint(`/sessions/${id}/summarize`), {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -131,7 +131,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                 ) : (
                     <div className="session-list">
                         {sessions.map(s => (
-                            <div key={s.id} className="session-card" onClick={() => s.summary && setSelectedSession(s)} style={{ cursor: s.summary ? 'pointer' : 'default' }}>
+                            <div key={s.id} className="session-card">
                                 <div className="session-card__header">
                                     <span className="session-card__date">
                                         {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString()}
@@ -155,8 +155,7 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                                 {s.summary ? (
                                     <div className="session-card__summary">
                                         <h4>📝 Executive Summary</h4>
-                                        <p>{s.summary.length > 150 ? s.summary.slice(0, 150) + '...' : s.summary}</p>
-                                        <span style={{ color: '#a78bfa', fontSize: '12px', marginTop: '4px', display: 'inline-block' }}>Click to read full summary →</span>
+                                        <p>{s.summary}</p>
 
                                         {/* Topics / Keywords */}
                                         {s.topics && s.topics.length > 0 && (
@@ -201,54 +200,6 @@ export function Dashboard({ isConnected, sessionStatus, sessionId, isCapturing, 
                     </div>
                 )}
             </div>
-            {/* Summary Modal */}
-            {selectedSession && (
-                <div className="summary-modal-backdrop" onClick={() => setSelectedSession(null)}>
-                    <div className="summary-modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="summary-modal__header">
-                            <h2>📝 Session Summary</h2>
-                            <button className="summary-modal__close" onClick={() => setSelectedSession(null)}>✕</button>
-                        </div>
-                        <div className="summary-modal__meta">
-                            <span>📅 {new Date(selectedSession.createdAt).toLocaleDateString()} {new Date(selectedSession.createdAt).toLocaleTimeString()}</span>
-                            <span>💬 {selectedSession._count?.transcripts || 0} transcripts</span>
-                        </div>
-                        <div className="summary-modal__body">
-                            <div className="summary-modal__section">
-                                <h3>Summary</h3>
-                                <p>{selectedSession.summary}</p>
-                            </div>
-                            {selectedSession.actionItems && selectedSession.actionItems.length > 0 && (
-                                <div className="summary-modal__section">
-                                    <h3>✅ Action Items</h3>
-                                    <ul>
-                                        {selectedSession.actionItems.map((item: string, i: number) => (
-                                            <li key={i}>{item}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                            {selectedSession.topics && selectedSession.topics.length > 0 && (
-                                <div className="summary-modal__section">
-                                    <h3>🏷️ Topics</h3>
-                                    <div className="summary-modal__topics">
-                                        {selectedSession.topics.map((topic: string, i: number) => (
-                                            <span key={i} className="topic-tag">#{topic}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="summary-modal__footer">
-                            <button className="btn btn--primary" onClick={() => {
-                                onResumeSession(selectedSession.id);
-                                onNavigate('session');
-                                setSelectedSession(null);
-                            }}>View Full Session</button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

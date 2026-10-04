@@ -1,7 +1,5 @@
 # WhisperMentor AI
 
-![Logo](apps/desktop/public/logo.png)
-
 WhisperMentor AI is a specialized desktop assistant built to help people get more out of live mentoring sessions and video calls. It captures system audio from platforms like Zoom, Teams, or Google Meet, transcribes the conversation in real-time, and builds a searchable semantic memory of the session.
 
 Think of it as a private "co-mentor" that lives in your system tray. You can ask questions about what was just said without interrupting the speaker, and the AI responds using the mentor's specific context and style—privately, via a minimal overlay.
@@ -19,28 +17,9 @@ WhisperMentor turns every meeting into a live, interactive knowledge base.
 ## Key Capabilities
 - **Active Listening:** Seamless system audio capture across any desktop video platform.
 - **Semantic Memory:** Automatically extracts concepts and builds a knowledge graph (Neo4j) alongside vector embeddings.
-- **Private Q&A:** A discreet overlay interface for chat and voice queries — ask questions without interrupting.
+- **Private Q&A:** A discreet overlay interface for chat, voice, or sign language queries.
 - **Adaptive Reasoning:** The AI adapts its tone and depth based on the mentor's previous explanations.
-- **Meeting Auto-Link:** Automatically links all participants in the same meeting to a shared session — zero configuration.
-- **Multilingual:** Real-time translation to 100+ languages via Lingo.dev with Redis caching to save credits.
-- **Smart Caching:** Redis caches translations, embeddings, RAG responses, and summaries — instant repeat lookups.
-
-## UI Screenshots
-
-### Login
-![Login Page](apps/desktop/public/login.jpg)
-
-### Sign Up
-![Sign Up Page](apps/desktop/public/signup.jpg)
-
-### Dashboard
-![Dashboard](apps/desktop/public/dashboard.jpg)
-
-### Active Session
-![Active Session](apps/desktop/public/active-session.jpg)
-
-### Overlay Mode
-![Overlay Mode](apps/desktop/public/overlay.jpg)
+- **Safety & Permissions:** Built-in governance for session owners to control topic boundaries and data retention.
 
 ## Project Structure
 We are using a monorepo setup for tight integration between the desktop client and the reasoning backend.
@@ -67,40 +46,48 @@ whispermentor-ai/
 ## System Architecture
 
 ```text
-  [ User Audio Source ]         [ Meeting Detector ]
-           │                    (Zoom/Teams/Meet/Webex)
-           │                           │
-           │                   SHA-256 → Session ID
-           │                           │
-  ┌────────▼───────────────┐       ┌───▼───────────────────┐
-  │  Electron Desktop App  │◄─────►│    NestJS Backend     │
-  │ (React / Overlay UI)   │       │ (Processing & Logic)  │
-  └────────────────────────┘       └──────────┬────────────┘
-                                              │
-                                   ┌──────────┼───────────┐
-                                   │          │           │
-                           ┌───────▼──┐  ┌────▼─────┐  ┌──▼──────┐
-                           │ Postgres │  │  Redis   │  │  Neo4j  │
-                           │ (Data)   │  │ (Cache)  │  │ (Graph) │
-                           └──────────┘  └──────────┘  └─────────┘
+  [ User Audio Source ]
+           │
+  ┌────────▼────────────────┐       ┌───────────────────────┐
+  │  Electron Desktop App   │◄─────►│    NestJS Backend     │
+  │ (React / Overlay UI)    │       │ (Processing & Logic)  │
+  └─────────────────────────┘       └──────────┬────────────┘
+                                               │
+                                    ┌──────────┼───────────┐
+                                    │          │           │
+                            ┌───────▼──┐  ┌────▼─────┐  ┌──▼──────┐
+                            │ Postgres │  │  Redis   │  │  Neo4j  │
+                            │ (Data)   │  │ (Queue)  │  │ (Graph) │
+                            └──────────┘  └──────────┘  └─────────┘
 ```
 
 ## Technical Stack
-- **Desktop:** Electron, React, Vite, WebRTC
+- **Desktop:** Electron, React, Vite, WebRTC, Tailwind
 - **Backend:** NestJS, Socket.IO, Prisma ORM
-- **Infrastructure:** Docker, PostgreSQL, Redis (Translation/Embedding/RAG/Summary Cache), Neo4j (Knowledge Graph)
-- **AI/ML:** Faster-Whisper (ASR), Sentence Transformers (Embeddings), Stereo RMS (Speaker Diarization)
-- **Translation:** Lingo.dev SDK → LLM Fallback (Gemini/OpenAI) → Local AI Fallback (3-tier with circuit breaker)
-- **LLM Providers:** Gemini, OpenAI, Anthropic, Ollama (user-configurable)
+- **Infrastructure:** Docker, Redis (BullMQ), PostgreSQL
+- **AI/ML Logic:** Faster-Whisper, spaCy, OpenAI/Gemini, Pinecone/FAISS, Neo4j
+- **Translation:** Lingo.dev (High-accuracy Technical Translation) with LLM Fallback
+- **Sign Language:** MediaPipe, TensorFlow, Three.js (for avatars)
 
 ## Lingo.dev Integration
-We have integrated **Lingo.dev** as the primary translation provider with a multi-tier fallback strategy.
-- **Primary:** Lingo.dev SDK with `fast: true` mode for real-time translation of transcripts, summaries, and Q&A.
-- **Fallback:** If the API key is missing or quota is exceeded, the system falls back to the user's LLM (Gemini/OpenAI/Ollama), then to a local AI service.
-- **Circuit Breaker:** On network failure, Lingo.dev is bypassed for 60 seconds while fallbacks handle requests.
-- **Redis Cache:** All translations are cached (`trans:{sha256}:{lang}`, 24h TTL). If User A translates a phrase, User B gets it from cache at zero API cost.
+We have integrated **Lingo.dev** to provide specialized, high-context translation for technical discussions.
+- **How it works:** When a `LINGO_DEV_API_KEY` is present in the `.env` file, the system prioritizes Lingo.dev's API for translation requests.
+- **Fallback Mechanism:** If the API key is missing or the service is unreachable, the system automatically falls back to the user's configured LLM (e.g., Ollama, OpenAI) to ensure uninterrupted service.
+- **Purpose:** Enhances translation accuracy for domain-specific terminology often found in mentoring sessions.
 
 ## Development Status
+We have completed **Phase 0: Infrastructure** and **Phase 1: Electron Desktop App**.
+
+| Phase | Milestone | Status |
+|:---:|---|---|
+| 0 | Repo & Multi-project Scaffold | **Complete** |
+| 1 | Electron Desktop App & Overlay | **Complete** |
+| 2 | System Audio Capture (WebRTC) | **Complete** |
+| 3 | Real-Time ASR Integration | **Complete** |
+| 4 | Semantic Knowledge Base (Neo4j + Vector) | **Complete** |
+| 5 | AI Reasoning Engine & Private Q&A | **Complete** |
+| 6 | User Auth & Audio Enhancements | **Complete** |
+
 ### progress till now
 - **Custom frameless window** with branded TitleBar (drag, minimize, maximize, close)
 - **System tray** integration — minimize-to-tray, context menu (Show / Toggle Overlay / Quit)
@@ -132,13 +119,6 @@ We have integrated **Lingo.dev** as the primary translation provider with a mult
 - **Export Options** — Export session transcripts and Q&A to **Markdown** or **Text** files for easy sharing.
 - **Pause/Resume** — Pause recording during breaks without ending the session; resumes seamlessly.
 - **Meeting Detection** — Auto-detects **Zoom**, **Teams**, **Google Meet**, or **Webex** windows and prompts to start recording.
-- **Meeting Auto-Link** — Participants in the same meeting automatically share the same session via SHA-256 deterministic session IDs derived from the meeting window title. No manual session sharing needed.
-- **Multilingual Translation** — Real-time translation to 100+ languages via **Lingo.dev SDK** with LLM and Local AI fallbacks.
-- **Redis Caching Layer** — 4 cache types: Translation (24h), Embedding (48h), RAG Response (1h), Session Summary (2h). Saves API costs and provides instant repeat lookups.
-- **Smart Summarization** — Detects summary-intent questions ("summarize", "recap", "overview") and fetches ALL session transcripts for comprehensive summaries.
-- **Knowledge Graph Viewer** — Visualize extracted concepts and their relationships in an interactive graph.
-- **Glossary View** — Auto-generated dictionary of technical terms from the session.
-- **JSON Export** — Export session data as JSON in addition to Markdown and Text.
 
 ---
 
@@ -151,141 +131,3 @@ We have integrated **Lingo.dev** as the primary translation provider with a mult
 
 ## License
 Distributed under the MIT License.
-
----
-
-## Minimum Requirements
-
-| Component       | Requirement                                    |
-|-----------------|------------------------------------------------|
-| **OS**          | Windows 10/11, macOS 12+, or Linux (x64)       |
-| **Node.js**     | v18.0.0 or higher                               |
-| **npm**         | v9.0.0 or higher                                |
-| **Python**      | 3.10 or higher                                  |
-| **Docker**      | Docker Desktop 4.x (for PostgreSQL, Redis, Neo4j) |
-| **RAM**         | 8 GB minimum (16 GB recommended for AI models)  |
-| **Disk Space**  | ~4 GB (dependencies + Docker images + AI models)|
-| **GPU**         | Optional — Faster-Whisper can use CUDA for faster transcription |
-| **Microphone**  | Optional — Required only for mic input capture  |
-
-> **Note:** An active internet connection is required for LLM API calls (Gemini / OpenAI / Anthropic) and Lingo.dev translations. Ollama runs fully offline.
-
----
-
-## Getting Started
-
-Follow these steps in order to go from a fresh clone to a fully running app.
-
-### Step 1 — Clone the Repository
-
-```bash
-git clone https://github.com/suraj-chakraborty/WisperMentorAI.git
-cd whispermentor-ai
-```
-
-### Step 2 — Start Infrastructure (Docker)
-
-you need to install PostgreSQL, Redis, and Neo4j with default settings in docker.
-
-
-Verify all three containers are healthy:
-
-
-### Step 3 — Configure Environment Variables
-
-Copy the template and fill in your API keys:
-
-```bash
-# From the project root
-cp .env.example .env
-```
-
-Edit `.env` and add your LLM API keys (at minimum one of Gemini / OpenAI / Anthropic / Ollama):
-
-```dotenv
-DATABASE_URL=postgresql://whispermentor:whispermentor_secret@localhost:5432/whispermentor_db?schema=public
-REDIS_HOST=localhost
-REDIS_PORT=6379
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=whispermentor_neo4j
-
-LINGODOTDEV_API_KEY=your_lingo_api_key
-# Add at least one LLM key for safety
-GEMINI_API_KEY=your_gemini_key
-# OPENAI_API_KEY=your_openai_key
-# ANTHROPIC_API_KEY=your_anthropic_key
-```
-
-### Step 4 — Install Root Dependencies
-
-```bash
-# From the project root
-npm install
-```
-
-### Step 5 — Set Up the Backend (NestJS)
-
-```bash
-cd apps/backend
-npm install
-
-# Generate Prisma client
-npm run prisma:generate
-
-# Run database migrations
-npm run prisma:migrate
-
-# Start the backend in dev mode
-npm run start:dev
-```
-
-The backend will start on `http://127.0.0.1:3001`.
-
-### Step 6 — Start the AI Service (Python)
-
-Open a **new terminal** and run:
-
-**Windows (PowerShell):**
-if everything is installed properly then run this command 
-```powershell
-.\run-ai-service.ps1
-```
-
-**macOS / Linux:**
-```bash
-cd apps/ai-service
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-python -m uvicorn main:app --port 8000 --reload
-```
-
-The AI service will start on `http://127.0.0.1:8000`. On first run, it will download the Faster-Whisper model (~1 GB).
-
-### Step 7 — Launch the Desktop App (Electron + React)
-
-Open a **new terminal** and run:
-
-```bash
-cd apps/desktop
-npm install
-npm run electron:dev
-```
-
-The Electron app should open automatically. Create an account (Signup) and start a session!
-
-### Quick Checklist
-
-| Step | Command / Action | Expected Result |
-|------|------------------|-----------------|
-| 1 | `docker ps` | 3 containers running |
-| 2 | Backend terminal | `Nest application successfully started` |
-| 3 | AI service terminal | `Uvicorn running on http://127.0.0.1:8000` |
-| 4 | Desktop terminal | Electron window opens with Login page |
-| 5 | Sign up + Start session | Live transcription when audio is playing |
-
----
-
-<p align="center"><b>created by <a href="https://suraj-chakraborty.netlify.app">suraj chakraborty</a>, if you like it please give a star ⭐</b></p>
