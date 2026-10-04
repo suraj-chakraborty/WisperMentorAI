@@ -5,40 +5,47 @@ node_modules/
 
 # Build outputs
 dist/
+dist-electron/
 build/
 out/
 *.tsbuildinfo
 
-# Environment
-.env
-.env.local
-.env.*.local
-./read.md
-./brainstorm.md
-docker-compose.yml
-run-ai-service.ps1
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+apps/ai-service/.venv/
+apps/ai-service/venv/
+.venv/
+env/
+venv/
+ENV/
 
-# IDE
+# Lingo cache and logs
+lingo/cache/
+apps/desktop/src/lingo/cache/
+apps/desktop/src/lingo/metadata-*
+apps/desktop/src/lingo/*.log
+
+# Environment files (preserve examples)
+.env*
+!.env.example
+
+# IDE & OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
 # Electron
 release/
 
-# Prisma
+# Prisma SQLite local testing
 apps/backend/prisma/*.db
-apps/backend/prisma/migrations/
-apps/ai-service/Scripts*
-apps/ai-service/.venv/
-
-# Docker
-docker-data/
 
 # Logs
 *.log
@@ -46,9 +53,17 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Testing
+# Testing & Coverage
 coverage/
+.nyc_output/
+.pytest_cache/
 
-# Temporary
+# Temporary & Notes
 tmp/
 temp/
+REMEDIATION.md
+brainstorm.md
+read.md
+article.md
+*.md
+!README.md
