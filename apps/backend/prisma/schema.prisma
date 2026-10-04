@@ -65,6 +65,7 @@ model Session {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
+  @@index([mentorId])
   @@map("sessions")
 }
 
@@ -106,6 +107,8 @@ model ConceptRelation {
   from     Concept @relation("fromConcept", fields: [fromId], references: [id], onDelete: Cascade)
   to       Concept @relation("toConcept", fields: [toId], references: [id], onDelete: Cascade)
 
+  @@index([fromId])
+  @@index([toId])
   @@map("concept_relations")
 }
 
@@ -121,6 +124,7 @@ model MemoryChunk {
   createdAt DateTime @default(now())
 
   @@index([mentorId])
+  @@index([sessionId])
   @@map("memory_chunks")
 }
 
@@ -138,6 +142,7 @@ model Question {
   createdAt DateTime @default(now())
 
   @@index([sessionId])
+  @@index([userId])
   @@map("questions")
 }
 
@@ -150,5 +155,6 @@ model Answer {
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 
+  @@index([questionId])
   @@map("answers")
 }

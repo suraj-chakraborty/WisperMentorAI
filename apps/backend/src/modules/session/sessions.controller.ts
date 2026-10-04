@@ -1,12 +1,15 @@
-import { Controller, Post, Get, Param, NotFoundException, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Param, NotFoundException, UseGuards, Request, Query } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SessionService } from './session.service';
 import { ReasoningService } from '../ai/reasoning.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MemoryService } from '../memory/memory.service';
-
 import { AuthGuard } from '@nestjs/passport';
+import { SessionOwnershipGuard } from '../../common/guards/session-ownership.guard';
 
-@UseGuards(AuthGuard('jwt'))
+@ApiTags('sessions')
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'), SessionOwnershipGuard)
 @Controller('sessions')
 export class SessionsController {
     constructor(
@@ -17,8 +20,14 @@ export class SessionsController {
     ) { }
 
     @Get()
-    async getSessions() {
-        return this.sessionService.getAllSessions();
+    async getSessions(
+        @Request() req: any,
+        @Query('limit') limit?: string,
+        @Query('offset') offset?: string
+    ) {
+        const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+        const parsedOffset = offset ? parseInt(offset, 10) : undefined;
+        return this.sessionService.getUserSessions(req.user.userId, parsedLimit, parsedOffset);
     }
 
     @Post()

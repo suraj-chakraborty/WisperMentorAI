@@ -7,6 +7,7 @@ import { LlmService } from '../ai/llm.service';
 import { SettingsService } from '../settings/settings.service';
 
 import { LingoDotDevEngine } from 'lingo.dev/sdk';
+import { redactSecret } from '../../common/utils/logger.utils';
 
 @Injectable()
 export class TranslationService {
@@ -33,7 +34,7 @@ export class TranslationService {
         const settings = await this.settingsService.getRawSettings(userId || 'demo-user');
         const lingoConfig = settings?.lingo || {};
         const llmConfig = settings?.llm || {};
-        this.logger.log(`🔑 [DEBUG] translate() userId=${userId || 'demo-user'}, lingoApiKey=${lingoConfig.apiKey ? lingoConfig.apiKey.slice(0, 8) + '...' : '(empty)'}, llmProvider=${settings?.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama')}, llmApiKey=${llmConfig.apiKey ? llmConfig.apiKey.slice(0, 8) + '...' : '(empty)'}`);
+        this.logger.debug(`translate() userId=${userId || 'demo-user'}, lingoApiKey=${redactSecret(lingoConfig.apiKey)}, llmProvider=${settings?.offlineMode ? 'ollama' : (llmConfig.provider || 'ollama')}, llmApiKey=${redactSecret(llmConfig.apiKey)}`);
 
         // Use user's key first
         const userApiKey = lingoConfig.apiKey;
@@ -88,6 +89,20 @@ export class TranslationService {
         }
     }
 
+    async translateBatch(texts: string[], targetLang: string, userId?: string): Promise<Array<{ original: string; translation: string; warning?: string }>> {
+        if (!texts || !texts.length) return [];
+        return await Promise.all(
+            texts.map(async (text) => {
+                const result = await this.translate(text, targetLang, userId);
+                return {
+                    original: text,
+                    translation: result.translation,
+                    warning: result.warning,
+                };
+            })
+        );
+    }
+
     private async translateWithLingo(text: string, targetLang: string, apiKey: string): Promise<string> {
         const lingo = new LingoDotDevEngine({ apiKey });
         return await lingo.localizeText(text, {
@@ -99,8 +114,14 @@ export class TranslationService {
 
     private async translateWithLocalAi(text: string): Promise<{ translation: string; warning?: string }> {
         const url = this.configService.get<string>('LOCAL_AI_URL') || 'http://localhost:8000/translate';
+        const internalToken = this.configService.get<string>('AI_SERVICE_INTERNAL_TOKEN') || 'whispermentor_internal_service_secret_token';
         const response = await firstValueFrom(
-            this.httpService.post(url, { text }, { timeout: 10000 })
+            this.httpService.post(url, { text }, {
+                timeout: 10000,
+                headers: {
+                    'X-Internal-Token': internalToken,
+                },
+            })
         );
         return {
             translation: response.data.translation,

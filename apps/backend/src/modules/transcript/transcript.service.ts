@@ -14,10 +14,12 @@ export class TranscriptService {
         });
     }
 
-    async getTranscripts(sessionId: string) {
+    async getTranscripts(sessionId: string, limit?: number, offset?: number) {
         return this.prisma.transcript.findMany({
             where: { sessionId },
             orderBy: { createdAt: 'asc' },
+            ...(limit ? { take: Math.min(Math.max(limit, 1), 500) } : {}),
+            ...(offset ? { skip: Math.max(offset, 0) } : {}),
         });
     }
 }
