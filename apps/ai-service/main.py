@@ -1,8 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from faster_whisper import WhisperModel
-from sentence_transformers import SentenceTransformer
+try:
+    from faster_whisper import WhisperModel
+except ImportError:
+    WhisperModel = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
+
 from pydantic import BaseModel
 import shutil
 import os
@@ -14,33 +22,42 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-service")
 
-app = FastAPI(title="WhisperMentor AI Service")
+# CORS Configuration (Restrict to configured origins, avoiding wildcard + credentials vulnerability)
+cors_env = os.getenv("CORS_ORIGIN", "http://localhost:3001,http://localhost:5173")
+CORS_ORIGINS = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
 
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Shared secret verification between backend and AI service
+INTERNAL_TOKEN = os.getenv("AI_SERVICE_INTERNAL_TOKEN", "whispermentor_internal_service_secret_token")
+
+def verify_internal_token(x_internal_token: str = Header(None, alias="X-Internal-Token")):
+    if INTERNAL_TOKEN:
+        if not x_internal_token or x_internal_token != INTERNAL_TOKEN:
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: Invalid or missing X-Internal-Token header",
+            )
+    return True
 
 # Load Whisper Model (Global)
 # Use "tiny" or "base" for speed on CPU. "small" is better but slower.
 # device="cpu" and compute_type="int8" are safe defaults for most machines.
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+
 MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "tiny")
 DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+WHISPER_WORKERS = max(1, int(os.getenv("WHISPER_WORKERS", "2")))
+WHISPER_CPU_THREADS = max(1, int(os.getenv("WHISPER_CPU_THREADS", "4")))
 
-logger.info(f"Loading Whisper model: {MODEL_SIZE} on {DEVICE} ({COMPUTE_TYPE})...")
+logger.info(f"Loading Whisper model: {MODEL_SIZE} on {DEVICE} ({COMPUTE_TYPE}) with {WHISPER_WORKERS} workers...")
 try:
-    # Use 4 threads for better CPU performance if available
     model = WhisperModel(
         MODEL_SIZE, 
         device=DEVICE, 
         compute_type=COMPUTE_TYPE,
-        cpu_threads=4,
-        num_workers=2
+        cpu_threads=WHISPER_CPU_THREADS,
+        num_workers=WHISPER_WORKERS
     )
     logger.info("Model loaded successfully.")
 except Exception as e:
@@ -57,64 +74,37 @@ except Exception as e:
     logger.error(f"Failed to load embedding model: {e}")
     embed_model = None
 
-# Global Lock for Whisper Model (Faster-Whisper is not thread-safe for CPU compute_type=int8 sometimes)
-import asyncio
-model_lock = asyncio.Lock()
+from contextlib import asynccontextmanager
+
+# Concurrency management: Dedicated ThreadPoolExecutor + Semaphore allowing concurrent worker inference
+# without starving the asyncio event loop or overloading CPU with unbounded threads
+whisper_executor = ThreadPoolExecutor(max_workers=WHISPER_WORKERS, thread_name_prefix="whisper-worker")
+whisper_semaphore = asyncio.Semaphore(WHISPER_WORKERS)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    whisper_executor.shutdown(wait=False)
+
+app = FastAPI(title="WhisperMentor AI Service", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["http://localhost:3001", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Internal-Token"],
+)
 
 class EmbedRequest(BaseModel):
-    text: str
+    text: str | None = None
+    texts: list[str] | None = None
 
 @app.get("/")
 def health_check():
     return {"status": "ok", "model": MODEL_SIZE, "device": DEVICE}
 
-def process_transcription(path):
-    logger.info(f"Processing transcription for path: {path}")
-    import wave
-    speaker = "Meeting" # Default
-    
-    # Speaker Detection (Stereo RMS)
-    try:
-        with wave.open(path, 'rb') as wf:
-            if wf.getnchannels() == 2:
-                frames = wf.readframes(wf.getnframes())
-                audio = np.frombuffer(frames, dtype=np.int16)
-                if len(audio) > 0:
-                    audio = audio.reshape(-1, 2)
-                    left = audio[:, 0].astype(np.float32)  # System
-                    right = audio[:, 1].astype(np.float32) # Mic
-                    
-                    if len(left) > 0 and len(right) > 0:
-                        rms_left = np.sqrt(np.mean(left**2))
-                        rms_right = np.sqrt(np.mean(right**2))
-                        
-                        logger.info(f"Diarization RMS - Left (Sys): {rms_left:.4f}, Right (Mic): {rms_right:.4f}")
-                        
-                        # Threshold: if Mic is significant (ratio > 0.2) and active (> 500)
-                        # We allow Mic to be quieter than System because System is often full-volume.
-                        if rms_right > 500 and (rms_right > rms_left * 0.2): 
-                            speaker = "You"
-                        elif rms_right > rms_left: # Fallback
-                             speaker = "You"
-    except Exception as e:
-        logger.error(f"Diarization failed: {e}")
-
-    # Transcribe
-    segments, info = model.transcribe(
-        path, 
-        beam_size=1, 
-        vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=500),
-        initial_prompt="Live mentoring session. Technical discussion.",
-        condition_on_previous_text=False,
-        repetition_penalty=1.2
-    )
-    
-    # Consume generator
-    text = " ".join([segment.text for segment in segments])
-    return text, info, speaker
-
-@app.post("/transcribe")
+@app.post("/transcribe", dependencies=[Depends(verify_internal_token)])
 async def transcribe_audio(
     file: UploadFile = File(...),
     task: str = "transcribe"
@@ -174,9 +164,9 @@ async def transcribe_audio(
             text = " ".join([segment.text for segment in segments])
             return text, info, speaker
 
-        async with model_lock:
+        async with whisper_semaphore:
             start_time = asyncio.get_event_loop().time()
-            full_text, info, speaker = await loop.run_in_executor(None, run_model)
+            full_text, info, speaker = await loop.run_in_executor(whisper_executor, run_model)
             end_time = asyncio.get_event_loop().time()
             logger.info(f"Transcription finished in {end_time - start_time:.2f}s for {tmp_path}")
 
@@ -196,26 +186,33 @@ async def transcribe_audio(
             os.remove(tmp_path)
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/embed")
+@app.post("/embed", dependencies=[Depends(verify_internal_token)])
 async def embed_text(request: EmbedRequest):
     if not embed_model:
         raise HTTPException(status_code=503, detail="Embedding model not loaded")
     
     try:
-        if not request.text.strip():
-            return {"embedding": []}
-        
-        # Generate embedding (run in threadpool to avoid blocking)
         import asyncio
         loop = asyncio.get_running_loop()
-        embedding = await loop.run_in_executor(None, lambda: embed_model.encode(request.text).tolist())
+
+        # Batch embedding mode
+        if request.texts is not None:
+            if not request.texts:
+                return {"embeddings": []}
+            embeddings = await loop.run_in_executor(None, lambda: embed_model.encode(request.texts).tolist())
+            return {"embeddings": embeddings}
+
+        # Single embedding mode
+        if not request.text or not request.text.strip():
+            return {"embedding": []}
         
+        embedding = await loop.run_in_executor(None, lambda: embed_model.encode(request.text).tolist())
         return {"embedding": embedding}
     except Exception as e:
         logger.error(f"Embedding failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/translate")
+@app.post("/translate", dependencies=[Depends(verify_internal_token)])
 async def translate_text(request: EmbedRequest):
     try:
         # Fallback to a small dictionary of common technical terms if deep-translator is missing

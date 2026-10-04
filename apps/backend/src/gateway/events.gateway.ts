@@ -14,6 +14,9 @@ import { TranscriptService } from '../modules/transcript/transcript.service';
 import { MemoryService } from '../modules/memory/memory.service';
 import { ReasoningService } from '../modules/ai/reasoning.service';
 import { JwtService } from '@nestjs/jwt';
+import { SessionService } from '../modules/session/session.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { WsEvent } from '@whispermentor/shared';
 
 @WebSocketGateway({
     cors: {
@@ -33,7 +36,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         private readonly transcriptService: TranscriptService,
         private readonly memoryService: MemoryService,
         private readonly reasoningService: ReasoningService,
-        private readonly jwtService: JwtService
+        private readonly jwtService: JwtService,
+        private readonly sessionService: SessionService,
+        private readonly prisma: PrismaService,
     ) { }
 
     private sessionSettings = new Map<string, { translate: boolean }>();
@@ -63,7 +68,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             client.data.user = user;
             this.logger.log(`🔌 Client connected: ${client.id} (${user.email})`);
 
-            client.emit('session:status', {
+            client.emit(WsEvent.SESSION_STATUS, {
                 status: 'connected',
                 sessionId: null,
             });
@@ -77,16 +82,41 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.log(`🔌 Client disconnected: ${client.id}`);
     }
 
-    @SubscribeMessage('session:join')
+    @SubscribeMessage(WsEvent.JOIN_SESSION)
     async handleJoinSession(
         @ConnectedSocket() client: Socket,
         @MessageBody() data: { sessionId: string },
     ) {
-        this.logger.log(`📡 Client ${client.id} joining session ${data.sessionId}`);
+        if (!data?.sessionId) {
+            client.emit(WsEvent.ERROR, { code: 'INVALID_REQUEST', message: 'Session ID is required' });
+            return;
+        }
+
+        const userId = client.data?.user?.userId || client.data?.user?.sub;
+        if (!userId) {
+            this.logger.warn(`Client ${client.id} unauthenticated during session:join`);
+            client.emit(WsEvent.ERROR, { code: 'UNAUTHORIZED', message: 'User not authenticated' });
+            return;
+        }
+
+        const session = await this.sessionService.getSession(data.sessionId);
+        if (!session) {
+            this.logger.warn(`Client ${client.id} tried to join non-existent session ${data.sessionId}`);
+            client.emit(WsEvent.ERROR, { code: 'NOT_FOUND', message: 'Session not found' });
+            return;
+        }
+
+        if (session.mentorId !== userId) {
+            this.logger.warn(`IDOR blocked: User ${userId} tried to join unauthorized session ${data.sessionId}`);
+            client.emit(WsEvent.ERROR, { code: 'FORBIDDEN', message: 'Access denied to this session' });
+            return;
+        }
+
+        this.logger.log(`📡 Client ${client.id} (user ${userId}) authorized and joining session ${data.sessionId}`);
         client.join(`session:${data.sessionId}`);
 
         // Emit Status
-        client.emit('session:status', {
+        client.emit(WsEvent.SESSION_STATUS, {
             status: 'joined',
             sessionId: data.sessionId,
         });
@@ -109,7 +139,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
     }
 
-    @SubscribeMessage('session:leave')
+    @SubscribeMessage(WsEvent.LEAVE_SESSION)
     handleLeaveSession(
         @ConnectedSocket() client: Socket,
         @MessageBody() data: { sessionId: string },
@@ -118,11 +148,21 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.leave(`session:${data.sessionId}`);
     }
 
-    @SubscribeMessage('audio:chunk')
+    @SubscribeMessage(WsEvent.AUDIO_CHUNK)
     async handleAudioChunk(
         @ConnectedSocket() client: Socket,
         @MessageBody() data: { sessionId: string; chunk: ArrayBuffer },
     ) {
+        if (!data?.sessionId || !data?.chunk) return;
+
+        if (client.rooms && !client.rooms.has(`session:${data.sessionId}`)) {
+            this.logger.warn(`Rejected audio chunk: Client ${client.id} has not joined session ${data.sessionId}`);
+            client.emit('session:warning', {
+                message: 'Must join session room before streaming audio'
+            });
+            return;
+        }
+
         const size = data.chunk.byteLength;
         this.logger.debug(`🎙 Audio chunk: ${size} bytes for session ${data.sessionId}`);
 
@@ -140,22 +180,34 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             this.server.to(`session:${data.sessionId}`).emit('session:warning:clear');
 
             if (result.text) {
-                // Emit real transcript
-                this.server.to(`session:${data.sessionId}`).emit('transcript:update', {
-                    id: `t_${Date.now()}`,
+                // 1. Persist to Postgres database (Required for Dashboard, Summary, and History)
+                let savedTranscript: any = null;
+                try {
+                    savedTranscript = await this.transcriptService.addTranscript(
+                        data.sessionId,
+                        result.speaker,
+                        result.text,
+                        result.language
+                    );
+                } catch (dbError: any) {
+                    this.logger.error(`Failed to save transcript to DB for session ${data.sessionId}: ${dbError.message || dbError}`);
+                    this.server.to(`session:${data.sessionId}`).emit('session:warning', {
+                        message: 'Failed to save transcript to database.'
+                    });
+                }
+
+                // 2. Broadcast transcript with actual DB ID and timestamp (or fallback if DB failed)
+                this.server.to(`session:${data.sessionId}`).emit(WsEvent.TRANSCRIPT_UPDATE, {
+                    id: savedTranscript ? savedTranscript.id : `t_${Date.now()}`,
                     speaker: result.speaker,
                     text: result.text,
                     language: result.language,
-                    timestamp: new Date(),
+                    timestamp: savedTranscript ? savedTranscript.createdAt : new Date(),
                 });
 
-                // Save to Semantic Memory (Neo4j)
+                // 3. Save to Semantic Memory (Neo4j) with structured error logging
                 this.memoryService.saveTranscript(data.sessionId, result.text, result.speaker, result.language)
-                    .catch(e => this.logger.error(`Failed to save memory: ${e}`));
-
-                // Save to Postgres (Prisma) - Required for Dashboard & Summary
-                this.transcriptService.addTranscript(data.sessionId, result.speaker, result.text, result.language)
-                    .catch(e => this.logger.error(`Failed to save transcript DB: ${e}`));
+                    .catch(memError => this.logger.warn(`Failed to save semantic memory for session ${data.sessionId}: ${memError.message || memError}`));
             }
         } catch (error: any) {
             this.logger.error(`Error processing audio chunk: ${error}`);
@@ -165,7 +217,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
     }
 
-    @SubscribeMessage('question:ask')
+    @SubscribeMessage(WsEvent.ASK_QUESTION)
     async handleQuestion(
         @ConnectedSocket() client: Socket,
         @MessageBody() data: { sessionId: string; text: string; language?: string },
@@ -175,13 +227,49 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Notify client that we are thinking
         client.emit('answer:thinking', { question: data.text });
 
+        let questionId = `q_${Date.now()}`;
         try {
-            const answer = await this.reasoningService.ask(data.text, data.sessionId, data.language, client.data.user?.userId || client.data.user?.sub);
+            const userId = client.data?.user?.userId || client.data?.user?.sub;
+            const onChunk = (chunk: string) => {
+                client.emit(WsEvent.ANSWER_CHUNK, {
+                    questionId,
+                    chunk,
+                });
+            };
 
-            client.emit('answer:response', {
-                questionId: `q_${Date.now()}`,
+            const answer = await this.reasoningService.ask(data.text, data.sessionId, data.language, userId, onChunk);
+
+            // Persist Question and Answer to PostgreSQL via Prisma
+            if (userId) {
+                try {
+                    const savedQuestion = await this.prisma.question.create({
+                        data: {
+                            userId,
+                            sessionId: data.sessionId,
+                            text: data.text,
+                            language: data.language || 'en',
+                            answers: {
+                                create: {
+                                    text: answer,
+                                    confidence: 1.0,
+                                    language: data.language || 'en',
+                                }
+                            }
+                        },
+                        include: { answers: true }
+                    });
+                    if (savedQuestion.answers?.[0]?.id) {
+                        questionId = savedQuestion.answers[0].id;
+                    }
+                } catch (dbErr: any) {
+                    this.logger.error(`Failed to persist question/answer to DB: ${dbErr.message || dbErr}`);
+                }
+            }
+
+            client.emit(WsEvent.ANSWER_RESPONSE, {
+                questionId,
                 text: answer,
-                confidence: 1.0, // Placeholder
+                confidence: 1.0,
             });
         } catch (error) {
             this.logger.error(`Failed to answer question: ${error}`);
