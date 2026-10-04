@@ -14,10 +14,16 @@ import { PrismaService } from '../../prisma/prisma.service';
         JwtModule.registerAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
-            useFactory: async (configService: ConfigService) => ({
-                secret: configService.get<string>('JWT_SECRET') || 'dev_secret_key_change_me',
-                signOptions: { expiresIn: '7d' },
-            }),
+            useFactory: async (configService: ConfigService) => {
+                const secret = configService.get<string>('JWT_SECRET');
+                if (!secret) {
+                    throw new Error('JWT_SECRET configuration is required for AuthModule');
+                }
+                return {
+                    secret,
+                    signOptions: { expiresIn: '7d' },
+                };
+            },
         }),
     ],
     controllers: [AuthController],

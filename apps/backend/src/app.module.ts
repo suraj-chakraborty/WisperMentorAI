@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { validateEnv } from './common/config/env.validation';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { EventsGateway } from './gateway/events.gateway';
@@ -15,7 +18,22 @@ import { TranslationModule } from './modules/translation/translation.module';
 
 @Module({
     imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
+        ConfigModule.forRoot({
+            isGlobal: true,
+            validate: validateEnv,
+        }),
+        ThrottlerModule.forRoot([
+            {
+                name: 'short',
+                ttl: 1000,
+                limit: 20,
+            },
+            {
+                name: 'medium',
+                ttl: 60000,
+                limit: 120,
+            },
+        ]),
         PrismaModule,
         AuthModule,
         SessionModule,
@@ -30,6 +48,10 @@ import { TranslationModule } from './modules/translation/translation.module';
     providers: [
         EventsGateway,
         TranscriptionService,
+        {
+            provide: APP_GUARD,
+            useClass: ThrottlerGuard,
+        },
     ],
 })
 export class AppModule { }
