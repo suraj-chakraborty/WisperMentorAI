@@ -18,7 +18,6 @@
         "prisma:studio": "prisma studio"
     },
     "dependencies": {
-        "@whispermentor/shared": "*",
         "@anthropic-ai/sdk": "^0.74.0",
         "@google/generative-ai": "^0.24.1",
         "@lingo.dev/compiler": "^0.3.8",
@@ -34,12 +33,14 @@
         "@nestjs/throttler": "^5.2.0",
         "@nestjs/websockets": "^10.3.0",
         "@prisma/client": "^5.10.0",
+        "@whispermentor/shared": "*",
         "axios": "^1.13.5",
         "bcrypt": "^6.0.0",
         "class-transformer": "^0.5.1",
         "class-validator": "^0.14.1",
         "concurrently": "^8.2.2",
         "helmet": "^8.3.0",
+        "ioredis": "^6.0.0",
         "neo4j-driver": "^6.0.1",
         "openai": "^6.22.0",
         "passport": "^0.7.0",

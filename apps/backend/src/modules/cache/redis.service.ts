@@ -13,7 +13,7 @@ export class RedisService implements OnModuleDestroy {
         this.client = new Redis(redisUrl, {
             maxRetriesPerRequest: 3,
             lazyConnect: true,
-            retryStrategy: (times) => {
+            retryStrategy: (times: number) => {
                 if (times > 5) {
                     this.logger.warn('Redis connection failed after 5 retries. Operating without cache.');
                     return null; // Stop retrying
@@ -23,7 +23,7 @@ export class RedisService implements OnModuleDestroy {
         });
 
         this.client.on('connect', () => this.logger.log('✅ Redis connected'));
-        this.client.on('error', (err) => this.logger.warn(`Redis error: ${err.message}`));
+        this.client.on('error', (err: Error) => this.logger.warn(`Redis error: ${err.message}`));
 
         // Connect (non-blocking)
         this.client.connect().catch(() => {
